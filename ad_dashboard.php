@@ -79,6 +79,26 @@ if (isset($_GET['api']) && $_GET['api'] === 'get') {
     exit;
 }
 
+// Provide a lightweight JSON endpoint to fetch new event_log rows so other clients
+// can poll for new notifications and update their local UI (no extra table required)
+if (isset($_GET['api']) && $_GET['api'] === 'logs') {
+  // Returns rows with id, event_timestamp, event_desc, event_status
+  $since_id = isset($_GET['since_id']) ? intval($_GET['since_id']) : 0;
+  $limit = 500;
+  $stmt = $conn->prepare("SELECT id, event_timestamp, event_desc, event_status FROM event_log WHERE id > ? ORDER BY id ASC LIMIT ?");
+  $stmt->bind_param('ii', $since_id, $limit);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  $rows = [];
+  while ($r = $res->fetch_assoc()) {
+    $rows[] = $r;
+  }
+  $stmt->close();
+  header('Content-Type: application/json');
+  echo json_encode(['rows' => $rows]);
+  exit;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    AUTH GUARD
    ───────────────────────────────────────────────────────────────────────────── */
@@ -1889,6 +1909,52 @@ window.addEventListener('load', ()=>{
       } catch (err) {}
     }
   });
+
+  // Poll server for new event_log rows (only when Notifications tab is active)
+  let lastLogId = 0;
+  function fetchLastLogIdFromLocal() {
+    try {
+      const logs = JSON.parse(localStorage.getItem('systemLogs') || '[]');
+      if (logs.length === 0) return 0;
+      // event_log.id isn't stored in systemLogs; store last id separately
+      return parseInt(localStorage.getItem('systemLogs_last_id') || '0', 10) || 0;
+    } catch(e) { return 0; }
+  }
+  function storeLastLogId(id) { localStorage.setItem('systemLogs_last_id', String(id)); }
+  lastLogId = fetchLastLogIdFromLocal();
+
+  async function pollServerLogs() {
+    try {
+      const activeTab = document.querySelector('.nav-item.active')?.dataset.tab;
+      if (activeTab !== 'notifications') return; // only poll when notifications visible
+      const resp = await fetch(window.location.pathname + '?api=logs&since_id=' + encodeURIComponent(lastLogId));
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.rows || !data.rows.length) return;
+      // Merge rows into local logs (preserve ordering)
+      const local = JSON.parse(localStorage.getItem('systemLogs') || '[]');
+      data.rows.forEach(r => {
+        const ts = r.event_timestamp || new Date().toLocaleString();
+        const message = r.event_desc || '';
+        // Create a log object matching local shape
+        const logObj = { type: r.event_status ? r.event_status.toLowerCase() : 'info', timestamp: ts, message: message, category: r.event_status ? r.event_status.toLowerCase() : 'info' };
+        // Prevent duplicates: check last 20 entries
+        const dup = local.slice(0,20).some(l => l.message === logObj.message && l.timestamp === logObj.timestamp);
+        if (!dup) {
+          local.unshift(logObj);
+          // Also prepend directly to DOM
+          try { ST_addLog(logObj.type, logObj.message); } catch(e) {}
+        }
+        lastLogId = Math.max(lastLogId, parseInt(r.id,10) || lastLogId);
+      });
+      localStorage.setItem('systemLogs', JSON.stringify(local));
+      storeLastLogId(lastLogId);
+    } catch(e) {
+      // silent
+    }
+  }
+  // Poll every 3 seconds while on Notifications tab
+  setInterval(pollServerLogs, 3000);
 });
 </script>
 </body>
