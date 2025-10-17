@@ -1,0 +1,273 @@
+/* ===============================
+   USER DASHBOARD — GLOBAL / RESET
+================================= */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #e0f7fa;
+    color: #333;
+    line-height: 1.6;
+    padding-top: 90px;            /* space for fixed header */
+    overflow-x: hidden;
+  }
+  
+  /* ===============================
+     HEADER (same as admin)
+  ================================= */
+  .header {
+    background: linear-gradient(135deg, #1e4e78, #2e75ac, #3aa3d1);
+    padding: 20px 25px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 200;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    color: #fff;
+    text-align: center;
+  }
+  
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  
+  .admin-title img {
+    height: 60px;
+    width: auto;
+    transition: transform 0.3s ease;
+  }
+  .admin-title img:hover { transform: scale(1.1) rotate(-2deg); }
+  
+  .isu-logo { transition: transform 0.3s ease; }
+  .isu-logo:hover { transform: scale(1.1) rotate(-2deg); }
+  
+  .system-title {
+    font-family: 'Righteous', cursive;
+    font-size: 34px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #ffffff, #ffffff, #ffffff);
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  
+  .header-right { position: absolute; right: 20px; }
+  
+  .admin-dropdown {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    font-weight: 500;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: background 0.3s ease;
+  }
+  .admin-dropdown:hover { background: rgba(255,255,255,0.15); }
+  
+  .dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: white;
+    min-width: 140px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    border-radius: 10px;
+    overflow: hidden;
+    z-index: 300;
+    transform: translateY(-10px);
+    opacity: 0;
+    transition: all 0.25s ease;
+  }
+  .dropdown-show { display: block; transform: translateY(0); opacity: 1; }
+  
+  .dropdown-content a button {
+    width: 100%;
+    padding: 12px 14px;
+    border: none;
+    background: white;
+    color: #1e4e78;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .dropdown-content a button:hover { background: #e6f0f7; }
+  
+  /* ===============================
+     LEFT NAVIGATION (same as admin)
+  ================================= */
+  .main-navigation {
+    background: linear-gradient(180deg, #1e4e78, #2e75ac, #3aa3d1);
+    width: 240px;
+    height: calc(100vh - 90px);
+    position: fixed;
+    left: 0;
+    top: 90px;
+    margin-top: 0;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.25);
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 32px;
+    overflow-y: auto;
+    z-index: 100;
+    color: #fff !important;
+  }
+  
+  .nav-container { padding: 20px 0; display: flex; flex-direction: column; }
+  
+  .nav-item {
+    padding: 18px 28px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 500;
+    color: #e6f0f7;
+    transition: all 0.3s ease;
+    border-right: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: transparent;
+    border: none;
+    text-align: left;
+    text-decoration: none; /* for <a> nav item */
+  }
+  .nav-item:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.15);
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+  }
+  .nav-item.active {
+    color: #fff;
+    border-right-color: #fff;
+    background: rgba(255,255,255,0.25);
+  }
+  
+  .nav-icon {
+  margin-right: 14px;
+  font-size: 22px;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #4dd0e1, #0288d1);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  .nav-item:hover .nav-icon { transform: scale(1.4) rotate(8deg); box-shadow: 0 0 15px rgba(0,180,255,0.7); }
+  
+  /* ===============================
+     MAIN CONTENT WRAPPER
+  ================================= */
+  .main-content {
+  background: #fff;
+  border-top-left-radius: 32px;
+  border-bottom-left-radius: 32px;
+  box-shadow: none;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  padding: 25px 32px 25px 32px;
+  margin-left: 240px;                        /* space for left nav */
+  margin-top: 90px;
+  width: calc(100vw - 240px);
+  min-height: calc(100vh - 90px);
+  max-height: calc(100vh - 90px);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.water-quality-section {
+  padding: 20px;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: auto;
+}
+  }
+  
+  /* ===============================
+     MONITORING — WATER SECTION
+     (reuse layout for user same as admin)
+  ================================= */
+  .water-quality-section { padding: 20px; }
+  .water-quality-section h2 {
+    margin-bottom: 20px;
+    color: #003366;
+    font-size: 1.4rem;
+  }
+  
+  .water-grid {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  gap: 12px;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  }
+  
+  .big-card {
+  background: linear-gradient(145deg, #b3e5fc, #81d4fa);
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  min-height: 340px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  }
+  .big-card h3 { font-size: 1.3rem; color: #024a66; margin-bottom: 12px; }
+  .big-card #wqiValue { font-size: 2.2rem; font-weight: bold; color: #012b45; }
+  
+  .right-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  flex: 1 1 0;
+  }
+  .sensor-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: linear-gradient(145deg, #a1d4f5, #6ec1e4);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.12);
+    transition: transform 0.2s ease;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .sensor-card:hover { transform: translateY(-4px); }
+  .sensor-card h3 { font-size: 0.9rem; color: #024a66; margin-bottom: 8px; text-transform: uppercase; }
+  .sensor-card p { font-size: 1.1rem; font-weight: bold; color: #012b45; margin: 0; }
+  .sensor-card.wide { grid-column: span 2; }
+  
+  /* ===============================
+     RESPONSIVE
+  ================================= */
+  @media (max-width: 900px) {
+    .water-grid { grid-template-columns: 1fr; }
+    .right-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 600px) {
+    .right-grid { grid-template-columns: 1fr; }
+    .sensor-card.wide { grid-column: span 1; }
+  }
+  

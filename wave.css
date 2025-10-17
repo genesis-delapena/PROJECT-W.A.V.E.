@@ -1,0 +1,207 @@
+/* ===== Page layout ===== */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Varela Round', Arial, sans-serif;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ===== Background with moving ocean waves ===== */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    url("wavebg.jpeg") repeat-x,
+    linear-gradient(135deg, #0077b6, #0096c7, #00b4d8);
+  background-size: 200% 100%, cover;
+  background-position: 0 bottom;
+  pointer-events: none;
+  z-index: 0;
+
+  animation: waveSlide 30s linear infinite,
+             waveUpDown 12s ease-in-out infinite;
+}
+
+@keyframes waveSlide {
+  0% { background-position-x: 0; }
+  100% { background-position-x: -1000px; }
+}
+
+
+/* ===== Glassmorphic card ===== */
+.login-container {
+  background: rgba(255, 255, 255, 0.12); /* frosted glass */
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+
+  border-radius: 20px;
+  padding: 40px;
+  width: 350px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  position: relative;
+  z-index: 1;
+  color: #fff;
+}
+
+/* ===== Logo ===== */
+.boat-icon {
+  width: 85px;
+  height: auto;
+  margin-bottom: 10px;
+  animation: waveBoat 4s ease-in-out infinite;
+}
+@keyframes waveBoat {
+  0%   { transform: rotate(0deg) translateY(0); }
+  25%  { transform: rotate(-3deg) translateY(-2px); }
+  50%  { transform: rotate(0deg) translateY(0); }
+  75%  { transform: rotate(3deg) translateY(-2px); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+
+/* ===== Headings ===== */
+h2 {
+  font-family: 'Righteous', sans-serif;
+  font-size: 2rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 1px 1px 6px rgba(0, 0, 0, 0.5);
+  margin-bottom: 20px;
+}
+
+/* ===== Input groups ===== */
+.input-group {
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+.input-group label {
+  font-weight: bold;
+  color: #e0f7fa;
+  margin-bottom: 6px;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Glassy inputs ===== */
+/* ===== Glassy inputs ===== */
+.input-group input {
+  width: 100%;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  outline: none;
+  color: #e0f7fa; /* 👈 same as label */
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  text-align: center;
+  transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
+
+  /* same glowing effect as labels */
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.input-group input::placeholder {
+  color: rgba(224, 247, 250, 0.7); /* softer version */
+  text-shadow: none; /* placeholder stays clean */
+}
+
+.input-group input:focus {
+  border-color: #00b4d8;
+  box-shadow: 0 0 12px rgba(0, 180, 216, 0.6);
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff; /* make typed text glow stronger when focused */
+  text-shadow: 0 0 6px rgba(0, 180, 216, 0.9);
+}
+
+
+/* ===== Buttons ===== */
+.loginbutton {
+  width: 100%;
+  background: rgba(0, 180, 216, 0.75);
+  border: none;
+  border-radius: 12px;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.loginbutton:hover {
+  background: rgba(0, 180, 216, 0.9);
+  transform: translateY(-2px);
+}
+.loginbutton:active {
+  transform: translateY(0);
+}
+
+/* ===== Notes and warnings ===== */
+.note {
+  font-size: 12px;
+  color: #f1f1f1;
+  margin-top: 10px;
+}
+.warning {
+  color: #ff6b6b;
+  font-size: 0.9rem;
+  margin-top: 6px;
+}
+
+.g-recaptcha {
+  transform: scale(0.1);        /* adjust size */
+  -webkit-transform: scale(0.1);
+  transform-origin: 0 0;        /* keep aligned to top-left */
+  -webkit-transform-origin: 0 0;
+  margin: 0.5px auto;            /* center horizontally */
+}
+
+.recaptcha-disclosure .recaptcha-white,
+.recaptcha-disclosure .recaptcha-white:visited,
+.recaptcha-disclosure .recaptcha-white:active {
+  color: #4fc3f7 !important;   /* ocean light blue */
+  text-decoration: none !important;
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(79, 195, 247, 0.9),
+               0 0 16px rgba(33, 150, 243, 0.6),
+               0 0 24px rgba(3, 169, 244, 0.4);
+  animation: oceanPulse 2.5s infinite ease-in-out;
+  transition: color 0.3s ease-in-out;
+}
+
+.recaptcha-disclosure .recaptcha-white:hover {
+  color: #81d4fa !important;  /* lighter ocean blue on hover */
+  text-shadow: 0 0 12px rgba(129, 212, 250, 1),
+               0 0 24px rgba(79, 195, 247, 0.8),
+               0 0 36px rgba(3, 169, 244, 0.6);
+}
+
+/* 🌊 Pulsing glow animation */
+@keyframes oceanPulse {
+  0% {
+    text-shadow: 0 0 6px rgba(79, 195, 247, 0.8),
+                 0 0 12px rgba(33, 150, 243, 0.6),
+                 0 0 20px rgba(3, 169, 244, 0.4);
+  }
+  50% {
+    text-shadow: 0 0 12px rgba(129, 212, 250, 1),
+                 0 0 24px rgba(79, 195, 247, 0.9),
+                 0 0 36px rgba(3, 169, 244, 0.7);
+  }
+  100% {
+    text-shadow: 0 0 6px rgba(79, 195, 247, 0.8),
+                 0 0 12px rgba(33, 150, 243, 0.6),
+                 0 0 20px rgba(3, 169, 244, 0.4);
+  }
+}
