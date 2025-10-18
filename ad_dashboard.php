@@ -1643,6 +1643,43 @@ function ST_addLog(type, message){
     xhr.send("log_to_event_log=1&desc=" + encodeURIComponent(msg) + "&status=" + encodeURIComponent(type.toUpperCase()));
   } catch (e) { console.error('DB log AJAX error', e); }
 }
+// Add a local-only log inserter that mirrors ST_addLog's DOM/local behavior
+// but does NOT POST back to the server. Use this for logs coming from the
+// server (polling) so we don't duplicate rows in the DB.
+function ST_addLogLocal(type, message, timestamp) {
+  const box = document.getElementById("st-logBox");
+  if (!box) return;
+  const tr = document.createElement("tr");
+  // Use provided timestamp or generate one
+  const ts = timestamp || new Date().toLocaleString();
+  let msg = message;
+  if (message.startsWith('[USER]') || message.startsWith('[ADMIN]')) {
+    const match = message.match(/^\[(USER|ADMIN)\]\s*(.*)$/);
+    if (match) msg = match[0];
+  } else {
+    msg = '[ADMIN] ' + message;
+  }
+  const category = classifyLog(type, message);
+  tr.className = `st-log-entry cat-${category}`;
+  tr.dataset.category = category;
+  const tdTime = document.createElement("td");
+  tdTime.textContent = ts;
+  tdTime.className = "timestamp";
+  const tdMsg = document.createElement("td");
+  tdMsg.textContent = msg;
+  tdMsg.className = "message";
+  const tdCat = document.createElement("td");
+  let catLabel = category.charAt(0).toUpperCase() + category.slice(1);
+  if (category === 'login') catLabel = 'Access';
+  if (category === 'info') catLabel = 'Info';
+  tdCat.textContent = catLabel;
+  tdCat.className = "category";
+  tr.appendChild(tdTime);
+  tr.appendChild(tdMsg);
+  tr.appendChild(tdCat);
+  box.prepend(tr);
+  ST_saveLogs();
+}
 function ST_saveLogs(){
   const box = document.getElementById("st-logBox");
   if (!box) return;
@@ -1917,7 +1954,11 @@ window.addEventListener('load', ()=>{
       const logs = JSON.parse(localStorage.getItem('systemLogs') || '[]');
       if (logs.length === 0) return 0;
       // event_log.id isn't stored in systemLogs; store last id separately
-      return parseInt(localStorage.getItem('systemLogs_last_id') || '0', 10) || 0;
+      const localId = parseInt(localStorage.getItem('systemLogs_last_id') || '0', 10) || 0;
+      if (localId > 0) return localId;
+      // Fall back to server-provided initial max id to avoid fetching full history
+      if (typeof window !== 'undefined' && window.ST_INIT_LAST_LOG_ID) return parseInt(window.ST_INIT_LAST_LOG_ID, 10) || 0;
+      return 0;
     } catch(e) { return 0; }
   }
   function storeLastLogId(id) { localStorage.setItem('systemLogs_last_id', String(id)); }
@@ -1932,22 +1973,30 @@ window.addEventListener('load', ()=>{
       const data = await resp.json();
       if (!data.rows || !data.rows.length) return;
       // Merge rows into local logs (preserve ordering)
+      // We'll track seen event_log ids for robust dedupe across devices
+      let seenIds = JSON.parse(localStorage.getItem('systemLogs_ids') || '[]');
       const local = JSON.parse(localStorage.getItem('systemLogs') || '[]');
       data.rows.forEach(r => {
+        const idNum = parseInt(r.id, 10) || 0;
+        if (seenIds.includes(idNum)) {
+          lastLogId = Math.max(lastLogId, idNum);
+          return; // skip already-seen events
+        }
         const ts = r.event_timestamp || new Date().toLocaleString();
         const message = r.event_desc || '';
+        const status = r.event_status ? r.event_status.toLowerCase() : 'info';
         // Create a log object matching local shape
-        const logObj = { type: r.event_status ? r.event_status.toLowerCase() : 'info', timestamp: ts, message: message, category: r.event_status ? r.event_status.toLowerCase() : 'info' };
-        // Prevent duplicates: check last 20 entries
-        const dup = local.slice(0,20).some(l => l.message === logObj.message && l.timestamp === logObj.timestamp);
-        if (!dup) {
-          local.unshift(logObj);
-          // Also prepend directly to DOM
-          try { ST_addLog(logObj.type, logObj.message); } catch(e) {}
-        }
-        lastLogId = Math.max(lastLogId, parseInt(r.id,10) || lastLogId);
+        const logObj = { type: status, timestamp: ts, message: message, category: status };
+        // Prepend to local array and DOM using local-only inserter (don't re-post to DB)
+        local.unshift(logObj);
+        try { ST_addLogLocal(logObj.type, logObj.message, logObj.timestamp); } catch(e) { console.error('local add log failed', e); }
+        seenIds.push(idNum);
+        lastLogId = Math.max(lastLogId, idNum);
       });
+      // keep seenIds trimmed to recent 1000 ids to avoid unbounded growth
+      if (seenIds.length > 1000) seenIds = seenIds.slice(-1000);
       localStorage.setItem('systemLogs', JSON.stringify(local));
+      localStorage.setItem('systemLogs_ids', JSON.stringify(seenIds));
       storeLastLogId(lastLogId);
     } catch(e) {
       // silent
@@ -1957,5 +2006,14 @@ window.addEventListener('load', ()=>{
   setInterval(pollServerLogs, 3000);
 });
 </script>
+<?php
+// Provide the client with the current highest event_log id to avoid re-fetching full history
+try {
+  $res = $conn->query("SELECT MAX(id) AS m FROM event_log");
+  $maxId = 0;
+  if ($res && $row = $res->fetch_assoc()) $maxId = intval($row['m'] ?? 0);
+} catch (Exception $e) { $maxId = 0; }
+echo "\n<script>window.ST_INIT_LAST_LOG_ID = " . json_encode($maxId) . ";</script>\n";
+?>
 </body>
 </html>
