@@ -65,7 +65,7 @@ def console_sender():
         pass
 
 if __name__ == "__main__":
-    print("Server running at http://192.168.1.3:5000")
+    print("Server running at http://192.168.0.2:5000")
 
     # Reduce werkzeug logs (optional)
     import logging

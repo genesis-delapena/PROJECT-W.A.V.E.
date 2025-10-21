@@ -85,7 +85,7 @@ if (isset($_GET['api']) && $_GET['api'] === 'logs') {
   // Returns rows with id, event_timestamp, event_desc, event_status
   $since_id = isset($_GET['since_id']) ? intval($_GET['since_id']) : 0;
   $limit = 500;
-  $stmt = $conn->prepare("SELECT id, event_timestamp, event_desc, event_status FROM event_log WHERE id > ? ORDER BY id ASC LIMIT ?");
+  $stmt = $conn->prepare("SELECT id, event_timestamp, event_desc, event_status FROM event_log WHERE id > ? ORDER BY id DESC LIMIT ?");
   $stmt->bind_param('ii', $since_id, $limit);
   $stmt->execute();
   $res = $stmt->get_result();
@@ -187,6 +187,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["username"], $_POST["a
             if (empty($password) || strlen($password) < 6 || strlen($password) > 12) {
                 $error = "Password is required and must be 6–12 characters.";
             } else {
+        // Enforce maximum 5 accounts: do not allow new user creation when limit reached
+        $countStmt = $conn->prepare("SELECT COUNT(*) FROM auth_table");
+        if ($countStmt) {
+          $countStmt->execute();
+          $countStmt->bind_result($userCount);
+          $countStmt->fetch();
+          $countStmt->close();
+          if (intval($userCount) >= 5) {
+            $error = "User limit reached. Maximum 5 accounts allowed.";
+          }
+        } else {
+          // If the count query fails for some reason, avoid silently allowing more users
+          $error = "Unable to verify user limit. Please try again later.";
+        }
+
                 $check = $conn->prepare("SELECT 1 FROM auth_table WHERE BINARY MG_UName=? OR LOWER(MG_Email)=?");
                 $check->bind_param("ss", $username, $email);
                 $check->execute();
@@ -227,6 +242,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["deleteUser"])) {
    ───────────────────────────────────────────────────────────────────────────── */
 $result = $conn->query("SELECT MG_UName, MG_Email, LAR_level FROM auth_table");
 $users = $result->fetch_all(MYSQLI_ASSOC);
+$userCount = count($users);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -251,18 +267,20 @@ $users = $result->fetch_all(MYSQLI_ASSOC);
   .cat-info td.category::before { background: #2196f3; }
 /* Compact Monitoring Cards */
 .water-grid { display: grid; grid-template-columns: 2fr 3fr; gap: 12px; margin-bottom: 8px; }
-.big-card.sensor-card { min-height: 160px; font-size: 1rem; }
-.right-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 6px; }
-.sensor-card { background: linear-gradient(145deg, #7ed6f7, #5faee3); border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); color: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 38px; font-size: 0.92rem; padding: 6px 2px; }
+.big-card.sensor-card { min-height: 160px; font-size: 1.05rem; }
+.right-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 10px; }
+.sensor-card { background: linear-gradient(145deg, #7ed6f7, #5faee3); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); color: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 48px; font-size: 1rem; padding: 10px 8px; }
 .sensor-card.wide { grid-column: span 2; }
-.sensor-card h3 { margin: 0 0 2px 0; font-size: 0.92rem; font-weight: 700; }
-.sensor-card p { margin: 0; font-size: 1rem; font-weight: 600; }
+.sensor-card h3 { margin: 0 0 6px 0; font-size: 1.02rem; font-weight: 700; }
+.sensor-card p { margin: 0; font-size: 1.08rem; font-weight: 600; }
+html { font-size: 16px; }
 html, body {
   height: 100vh;
   width: 100vw;
   overflow: hidden !important;
   margin: 0;
   padding: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
 }
 .main-content, .users-container, .notifications-wrap, .tools-stage {
   max-width: 100vw;
@@ -331,7 +349,7 @@ html, body {
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear { display: none !important; }
 input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; visibility: hidden !important; }
-.error-msg { color: #e53935; font-size: 12px; margin-top: 4px; display: none; }
+.error-msg { color: #e53935; font-size: 13px; margin-top: 6px; display: none; }
 /* Live chart area */
 .chart-container { height: 400px; margin-top: 20px; }
 /* Optional: keep the separate "last updated" DOM element hidden since we draw it on chart */
@@ -351,7 +369,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .st-grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:20px; }
 .st-card {
   background: linear-gradient(145deg, #2b6777, #1e5162);
-  border-radius: 16px; padding: 18px;
+  border-radius: 16px; padding: 20px;
   box-shadow: 0 8px 18px rgba(0,0,0,0.3);
   text-align:center; color:#f1faff;
   transition: transform .2s ease, box-shadow .3s ease;
@@ -361,7 +379,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 /* 👉 Match sidebar icon style for cards’ icons */
 .st-icon {
   display:inline-flex; align-items:center; justify-content:center;
-  width:46px; height:46px;
+  width:56px; height:56px;
   border-radius:12px;
   background: linear-gradient(180deg,#49d7ff,#1aa6ff);
   color:#fff; font-size:22px; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 10px rgba(0,0,0,.25);
@@ -374,16 +392,16 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .st-off { background:#e63946; box-shadow:0 0 6px #e63946; }
 
 /* iOS-style Toggle Switch (for sensors) */
-.st-switch { position:relative; display:inline-block; width:52px; height:28px; }
+.st-switch { position:relative; display:inline-block; width:64px; height:34px; }
 .st-switch input { display:none; }
 .st-slider { position:absolute; cursor:pointer; inset:0; background:#b0c4de; border-radius:34px; transition: background .4s ease; }
-.st-slider::before { content:""; position:absolute; height:22px; width:22px; left:3px; bottom:3px; background:#fff; border-radius:50%;
+.st-slider::before { content:""; position:absolute; height:26px; width:26px; left:4px; bottom:3px; background:#fff; border-radius:50%;
   transition: transform .4s ease, background .4s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .st-switch input:checked + .st-slider { background: linear-gradient(135deg, #06d6a0, #1b9aaa); box-shadow: 0 0 12px rgba(0,200,150,0.7); }
-.st-switch input:checked + .st-slider::before { transform: translateX(24px); background: #e0f7fa; box-shadow: 0 0 10px rgba(0,200,150,0.9); }
+.st-switch input:checked + .st-slider::before { transform: translateX(30px); background: #e0f7fa; box-shadow: 0 0 10px rgba(0,200,150,0.9); }
 
 /* Buttons (System Actions) */
-.st-btn { font-size:14px; padding:10px 18px; border:none; border-radius:10px; cursor:pointer; font-weight:700; color:#fff; margin:8px 8px 0 0; box-shadow:0 4px 12px rgba(0,0,0,.3); }
+.st-btn { font-size:15px; padding:10px 18px; border:none; border-radius:10px; cursor:pointer; font-weight:700; color:#fff; margin:8px 8px 0 0; box-shadow:0 4px 12px rgba(0,0,0,.3); }
 .st-diag    { background: linear-gradient(135deg, #00b4d8, #0096c7); }
 .st-diag:hover { background: linear-gradient(135deg, #0096c7, #0077b6); }
 .st-powerOn { background: linear-gradient(135deg, #06d6a0, #1b9aaa); }
@@ -405,6 +423,12 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 }
 .st-pill:hover { filter: brightness(0.95); }
 
+/* Make action buttons (Edit/Delete) consistent */
+.action-btn { display:inline-block; min-width:64px; height:36px; padding:6px 10px; border-radius:10px; font-weight:700; cursor:pointer; }
+.edit-btn { background: linear-gradient(135deg,#45aaf2,#0fb9e6); color:#fff; border:none; box-shadow:0 4px 10px rgba(0,0,0,0.12); }
+.delete-btn { background: linear-gradient(135deg,#00b4ff,#0177d2); color:#fff; border:none; box-shadow:0 4px 10px rgba(0,0,0,0.12); }
+.action-btn:active { transform: translateY(1px); }
+
 /* Vessel status pill */
 #st-vesselStatus { font-weight: bold; margin-top: 10px; padding: 8px 12px; border-radius: 8px; display: inline-block; }
 .st-vessel-on  { background:#06d6a0; color:#fff; box-shadow:0 0 12px #06d6a0; }
@@ -419,7 +443,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .st-alert { color:#ff6b6b; font-weight:bold; }
 
 /* Small perf hint badge (optional) */
-.badge-hint { display:inline-block; margin-left:8px; padding:2px 8px; font-size:.75rem; color:#0f5132; background:#d1e7dd; border-radius:9999px; }
+.badge-hint { display:inline-block; margin-left:8px; padding:4px 10px; font-size:0.85rem; color:#0f5132; background:#d1e7dd; border-radius:9999px; }
 </style>
 </head>
 <body>
@@ -513,7 +537,7 @@ body {
 <div class="header">
   <div class="header-left">
     <img src="isu.png" alt="ISU Logo" height="65" width="65" class="isu-logo">
-    <div class="system-title">W.A.V.E. ADMIN Dashboard</div>
+    <div class="system-title">ADMIN Dashboard</div>
     <div class="admin-title"><img src="wave_logo2.png" alt="WAVE Logo"></div>
   </div>
   <div class="header-right">
@@ -714,7 +738,7 @@ body {
     </div>
     <div class="users-right">
       <h3>Existing Users</h3>
-      <table>
+  <table>
         <thead><tr><th>Users</th><th>Email</th><th>Password</th><th>Access</th><th>Actions</th></tr></thead>
         <tbody>
         <?php foreach ($users as $user): ?>
@@ -1041,16 +1065,12 @@ function filterNotificationLogs() {
 <!-- ──────────────────────────
      TOOLS  (SENSORS & SYSTEM ACTIONS AS COMBO BOX)
      ────────────────────────── -->
-<div id="toolsSection" class="section" style="<?php echo ($current_tab === 'tools') ? '' : 'display:none;'; ?>">
+<div id="toolsSection" class="section" style="<?php echo ($current_tab === 'tools') ? 'position:relative;' : 'display:none; position:relative;'; ?>">
   <h2>System Tools</h2>
 
   <!-- Top-left Combo Box -->
   <div class="tools-toolbar">
-    <label for="toolsCombo">View:</label>
-    <select id="toolsCombo" aria-label="Select tools view">
-      <option value="sensors">Sensors</option>
-      <option value="actions">System Actions</option>
-    </select>
+    <!-- Dropdown removed - sensors and actions are unified into a single view -->
   </div>
 
   <!-- Full-width stage: one view at a time -->
@@ -1059,72 +1079,79 @@ function filterNotificationLogs() {
       <!-- 🔵 MERGED single toggle button -->
       <button class="st-btn st-diag st-pill" id="toggleAllBtn" onclick="ST_toggleAllSensorsToggle()">Turn ALL ON</button>
     </div>
+    <!-- Vessel actions placed at the far right edge of the viewport (fixed) on wide screens -->
+  <div class="top-right-actions" style="position:fixed; top:140px; right:18px; display:flex; gap:10px; align-items:center; z-index:9999;">
+      <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
+      <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
+    </div>
+
+    <style>
+      /* Ensure top-right actions are fixed on wide screens and static on narrow screens */
+      @media (max-width: 900px) {
+        #toolsSection .top-right-actions { position: static !important; margin: 0 0 14px 0; justify-content: flex-end; }
+        #toolsSection .top-right-actions p, #toolsSection .top-right-actions button { font-size: 0.95rem; }
+        #toolsStageSensors { padding-top: 56px; }
+      }
+      @media (min-width: 901px) {
+        /* Fixed controls sit below the header (header height = 100px + small offset) */
+  #toolsSection .top-right-actions { position: fixed !important; top: 140px !important; right: 18px !important; }
+        #toolsStageSensors { padding-top: 6px; }
+      }
+    </style>
     <div class="st-grid">
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-vial"></i></div>
         <span class="st-dot st-off" id="st-dot-ph"></span>
-        <p>pH Level</p>
+        <p>PH LEVEL</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-ph" onchange="ST_toggleSensor(this,'ph')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-tint"></i></div>
         <span class="st-dot st-off" id="st-dot-turb"></span>
-        <p>Turbidity</p>
+        <p>TURBIDITY</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-turb" onchange="ST_toggleSensor(this,'turb')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-thermometer-half"></i></div>
         <span class="st-dot st-off" id="st-dot-temp"></span>
-        <p>Temperature</p>
+        <p>TEMPERATURE</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-temp" onchange="ST_toggleSensor(this,'temp')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-flask"></i></div>
         <span class="st-dot st-off" id="st-dot-ammo"></span>
-        <p>Ammonia</p>
+        <p>AMMONIA</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-ammo" onchange="ST_toggleSensor(this,'ammo')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-wind"></i></div>
         <span class="st-dot st-off" id="st-dot-do"></span>
-        <p>Dissolved Oxygen</p>
+        <p>DISSOLVED OXYGEN</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-do" onchange="ST_toggleSensor(this,'do')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-balance-scale"></i></div>
         <span class="st-dot st-off" id="st-dot-load1"></span>
-        <p>Loadcell 1</p>
+        <p>LOADCELL 1</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-load1" onchange="ST_toggleSensor(this,'load1')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-balance-scale"></i></div>
         <span class="st-dot st-off" id="st-dot-load2"></span>
-        <p>Loadcell 2</p>
+        <p>LOADCELL 2</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-load2" onchange="ST_toggleSensor(this,'load2')"><span class="st-slider"></span></label>
       </div>
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-satellite-dish"></i></div>
         <span class="st-dot st-off" id="st-dot-ultra"></span>
-        <p>Feed Level (Ultrasonic)</p>
+        <p>FEED LEVEL</p>
+        <p>(ULTRA SONIC)</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-ultra" onchange="ST_toggleSensor(this,'ultra')"><span class="st-slider"></span></label>
       </div>
     </div>
   </div>
-
-  <div id="toolsStageActions" class="tools-stage" style="display:none;">
-    <div class="tool-actions" style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-      <p id="st-vesselStatus" class="st-vessel-on">Vessel Status: ON</p>
-    <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
-
-
-</div> <!-- end main wrapper -->
-
-  
-</script>
-    </div>
     <hr style="margin:20px 0; border:1px solid #e5e7eb;">
   </div>
-</div>
 </div> <!-- /main-content -->
 <!-- ───────────────────────────────
      SCRIPTS
@@ -1136,6 +1163,7 @@ function toggleDropdown(){ document.getElementById('dropdownMenu').classList.tog
 /* ========== Existing users/emails for validation ========== */
 const existingUsers  = <?php echo json_encode(array_column($users,"MG_UName")); ?>;
 const existingEmails = <?php echo json_encode(array_map("strtolower",array_column($users,"MG_Email"))); ?>;
+const existingUserCount = <?php echo intval($userCount); ?>;
 const allowedDomains = ["gmail.com","yahoo.com","icloud.com","outlook.com"];
 
 /* ========== Inline validation: username dupes ========== */
@@ -1144,6 +1172,38 @@ document.getElementById("username").addEventListener("input", function(){
   const oldUser = document.getElementById("oldUsername").value;
   document.getElementById("userError").style.display = (user && existingUsers.includes(user) && user !== oldUser) ? "block" : "none";
 });
+
+// Disable Add User button if user limit reached (but allow form in Edit mode)
+function updateAddButtonState() {
+  const btn = document.getElementById('formButton');
+  const oldUser = document.getElementById('oldUsername').value || '';
+  if (existingUserCount >= 5 && oldUser === '') {
+    btn.disabled = true;
+    btn.textContent = 'User Limit Reached';
+    btn.style.opacity = '0.65';
+    btn.style.cursor = 'not-allowed';
+  } else {
+    btn.disabled = false;
+    btn.textContent = (oldUser === '') ? 'Add User' : 'Save Changes';
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+  }
+}
+
+// Run on load and when switching to edit mode
+document.addEventListener('DOMContentLoaded', function(){
+  updateAddButtonState();
+});
+
+// When editUser populates the form, update button state accordingly
+const originalEditUser = window.editUser;
+if (typeof originalEditUser === 'function') {
+  window.editUser = function(username, email, accessLevel) {
+    originalEditUser(username, email, accessLevel);
+    // Now allow saving even if user limit reached
+    updateAddButtonState();
+  }
+}
 
 /* ========== Inline validation: email format/domain/dupes ========== */
 document.getElementById("email").addEventListener("input", function(){
@@ -1471,20 +1531,7 @@ async function fetchData() {
    SYSTEM TOOLS — Combo Box switching + State + SweetAlert + PDF Export
    ────────────────────────────────────────────────────────────────── */
 
-/* Combo box switcher to maximize each view */
-const toolsCombo = document.getElementById('toolsCombo');
-const toolsStageSensors = document.getElementById('toolsStageSensors');
-const toolsStageActions = document.getElementById('toolsStageActions');
-toolsCombo.addEventListener('change', ()=>{
-  const v = toolsCombo.value;
-  if (v === 'sensors') {
-    toolsStageSensors.style.display = 'block';
-    toolsStageActions.style.display = 'none';
-  } else {
-    toolsStageSensors.style.display = 'none';
-    toolsStageActions.style.display = 'block';
-  }
-});
+/* Unified view: sensors and vessel actions are shown together; dropdown removed */
 
 /* Sensor toggle + persistence */
 const ST_SENSOR_KEYS = ['ph','turb','temp','ammo','do','load1','load2','ultra'];
@@ -1643,43 +1690,6 @@ function ST_addLog(type, message){
     xhr.send("log_to_event_log=1&desc=" + encodeURIComponent(msg) + "&status=" + encodeURIComponent(type.toUpperCase()));
   } catch (e) { console.error('DB log AJAX error', e); }
 }
-// Add a local-only log inserter that mirrors ST_addLog's DOM/local behavior
-// but does NOT POST back to the server. Use this for logs coming from the
-// server (polling) so we don't duplicate rows in the DB.
-function ST_addLogLocal(type, message, timestamp) {
-  const box = document.getElementById("st-logBox");
-  if (!box) return;
-  const tr = document.createElement("tr");
-  // Use provided timestamp or generate one
-  const ts = timestamp || new Date().toLocaleString();
-  let msg = message;
-  if (message.startsWith('[USER]') || message.startsWith('[ADMIN]')) {
-    const match = message.match(/^\[(USER|ADMIN)\]\s*(.*)$/);
-    if (match) msg = match[0];
-  } else {
-    msg = '[ADMIN] ' + message;
-  }
-  const category = classifyLog(type, message);
-  tr.className = `st-log-entry cat-${category}`;
-  tr.dataset.category = category;
-  const tdTime = document.createElement("td");
-  tdTime.textContent = ts;
-  tdTime.className = "timestamp";
-  const tdMsg = document.createElement("td");
-  tdMsg.textContent = msg;
-  tdMsg.className = "message";
-  const tdCat = document.createElement("td");
-  let catLabel = category.charAt(0).toUpperCase() + category.slice(1);
-  if (category === 'login') catLabel = 'Access';
-  if (category === 'info') catLabel = 'Info';
-  tdCat.textContent = catLabel;
-  tdCat.className = "category";
-  tr.appendChild(tdTime);
-  tr.appendChild(tdMsg);
-  tr.appendChild(tdCat);
-  box.prepend(tr);
-  ST_saveLogs();
-}
 function ST_saveLogs(){
   const box = document.getElementById("st-logBox");
   if (!box) return;
@@ -1702,10 +1712,11 @@ function ST_loadLogs(){
   if (!box) return;
   box.innerHTML = '';
   let logs = JSON.parse(localStorage.getItem("systemLogs") || "[]");
+  // Sort logs newest first (descending timestamp) so the latest entries show on top
   logs.sort((a, b) => {
     const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
     const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-    return ta - tb;
+    return tb - ta;
   });
   if (logs.length === 0) {
     const tr = document.createElement("tr");
@@ -1792,11 +1803,11 @@ function ST_exportLogsPDF(){
     const toMatch = !toTime || (logTime <= toTime);
     return catMatch && fromMatch && toMatch;
   });
-  // Sort logs by timestamp ascending (oldest first, to match UI order)
+  // Sort logs by timestamp descending (newest first) to match the UI order
   filtered = filtered.sort((a, b) => {
     const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
     const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-    return ta - tb;
+    return tb - ta;
   });
   if (filtered.length === 0) { Swal.fire("No Logs","No logs match the selected filters.","info"); return; }
   const { jsPDF } = window.jspdf;
@@ -1954,11 +1965,7 @@ window.addEventListener('load', ()=>{
       const logs = JSON.parse(localStorage.getItem('systemLogs') || '[]');
       if (logs.length === 0) return 0;
       // event_log.id isn't stored in systemLogs; store last id separately
-      const localId = parseInt(localStorage.getItem('systemLogs_last_id') || '0', 10) || 0;
-      if (localId > 0) return localId;
-      // Fall back to server-provided initial max id to avoid fetching full history
-      if (typeof window !== 'undefined' && window.ST_INIT_LAST_LOG_ID) return parseInt(window.ST_INIT_LAST_LOG_ID, 10) || 0;
-      return 0;
+      return parseInt(localStorage.getItem('systemLogs_last_id') || '0', 10) || 0;
     } catch(e) { return 0; }
   }
   function storeLastLogId(id) { localStorage.setItem('systemLogs_last_id', String(id)); }
@@ -1973,30 +1980,22 @@ window.addEventListener('load', ()=>{
       const data = await resp.json();
       if (!data.rows || !data.rows.length) return;
       // Merge rows into local logs (preserve ordering)
-      // We'll track seen event_log ids for robust dedupe across devices
-      let seenIds = JSON.parse(localStorage.getItem('systemLogs_ids') || '[]');
       const local = JSON.parse(localStorage.getItem('systemLogs') || '[]');
+      // Server returns new rows in descending order (newest first)
       data.rows.forEach(r => {
-        const idNum = parseInt(r.id, 10) || 0;
-        if (seenIds.includes(idNum)) {
-          lastLogId = Math.max(lastLogId, idNum);
-          return; // skip already-seen events
-        }
         const ts = r.event_timestamp || new Date().toLocaleString();
         const message = r.event_desc || '';
-        const status = r.event_status ? r.event_status.toLowerCase() : 'info';
-        // Create a log object matching local shape
-        const logObj = { type: status, timestamp: ts, message: message, category: status };
-        // Prepend to local array and DOM using local-only inserter (don't re-post to DB)
-        local.unshift(logObj);
-        try { ST_addLogLocal(logObj.type, logObj.message, logObj.timestamp); } catch(e) { console.error('local add log failed', e); }
-        seenIds.push(idNum);
-        lastLogId = Math.max(lastLogId, idNum);
+        const logObj = { type: r.event_status ? r.event_status.toLowerCase() : 'info', timestamp: ts, message: message, category: r.event_status ? r.event_status.toLowerCase() : 'info' };
+        // Prevent duplicates: check recent entries
+        const dup = local.slice(0,40).some(l => l.message === logObj.message && l.timestamp === logObj.timestamp);
+        if (!dup) {
+          // Because server rows are newest-first, unshift keeps newest on top
+          local.unshift(logObj);
+          try { ST_addLog(logObj.type, logObj.message); } catch(e) {}
+        }
+        lastLogId = Math.max(lastLogId, parseInt(r.id,10) || lastLogId);
       });
-      // keep seenIds trimmed to recent 1000 ids to avoid unbounded growth
-      if (seenIds.length > 1000) seenIds = seenIds.slice(-1000);
       localStorage.setItem('systemLogs', JSON.stringify(local));
-      localStorage.setItem('systemLogs_ids', JSON.stringify(seenIds));
       storeLastLogId(lastLogId);
     } catch(e) {
       // silent
@@ -2006,14 +2005,5 @@ window.addEventListener('load', ()=>{
   setInterval(pollServerLogs, 3000);
 });
 </script>
-<?php
-// Provide the client with the current highest event_log id to avoid re-fetching full history
-try {
-  $res = $conn->query("SELECT MAX(id) AS m FROM event_log");
-  $maxId = 0;
-  if ($res && $row = $res->fetch_assoc()) $maxId = intval($row['m'] ?? 0);
-} catch (Exception $e) { $maxId = 0; }
-echo "\n<script>window.ST_INIT_LAST_LOG_ID = " . json_encode($maxId) . ";</script>\n";
-?>
 </body>
 </html>

@@ -94,7 +94,7 @@ if (isset($_SESSION["LAR_level"])) {
       grid-template-columns: 280px 1fr 280px;
       align-items: center;
       justify-items: center;
-      padding: 10px;
+      padding: 120px 10px 10px 10px; /* top padding to avoid header overlap (header height ~100px) */
     }
 
     /* Back button */
@@ -173,7 +173,12 @@ if (isset($_SESSION["LAR_level"])) {
     .boat-rotating polygon {
       fill: none; stroke: #e2e8f0; stroke-width: 3;
     }
-    .heading-readout { color: white; margin-top: 8px; font-size: 16px; font-weight: bold; text-align: center; }
+  /* Prominent heading readout placed below compass */
+  .heading-readout { color: white; margin-top: 12px; font-size: 34px; font-weight: 800; text-align: center; letter-spacing: 0.6px; }
+
+    /* Heading + Compass container */
+    .heading-display { display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .heading-display .heading-readout { margin-top: 12px; font-size: 34px; font-weight: 800; color: #ffffff; text-align:center; }
 
     /* Status bar */
     .status-bar {
@@ -201,27 +206,27 @@ if (isset($_SESSION["LAR_level"])) {
       background: #1e293b;
       border: 1px solid #334155;
       border-radius: 12px;
-      padding: 18px;
+      padding: 20px 18px 28px 18px;
       width: 75%;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
-      gap: 18px;
-      min-height: 520px; /* increased to occupy removed feeds space */
+      gap: 22px;
+      min-height: 580px; /* increased to provide room for lowered helm */
     }
 
     /* Telegraph */
       .telegraph {
         position: relative;
-        width: 85px; height: 380px; /* taller telegraph for larger lever travel */
+        width: 85px; height: 380px; /* adjusted telegraph height */
         min-height: 360px;
         background: #0f172a;
         border: 2px solid #334155;
         border-radius: 10px;
-        margin-bottom: 8px;
-        overflow: visible;
+        margin-bottom: 10px; /* less space before helm */
+        overflow: hidden; /* ensure fills are clipped */
         padding-top: 10px;
       }
     .scale {
@@ -229,9 +234,25 @@ if (isset($_SESSION["LAR_level"])) {
       top: 0; left: 50%;
       transform: translateX(-50%);
       width: 4px; height: 100%;
-      background: linear-gradient(to bottom, #4ade80 0% 40%, #444 40% 60%, #e74c3c 60% 100%);
+      background: rgba(255,255,255,0.03); /* neutral track color */
       border-radius: 2px;
+      z-index: 1;
     }
+    .scale-fill {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 4px;
+      top: 50%;
+      height: 0%;
+      background: #9ca3af;
+      border-radius: 2px;
+      transition: top 0.18s ease, height 0.18s ease, background 0.18s ease;
+      pointer-events: none;
+      z-index: 2;
+      box-sizing: border-box;
+    }
+    .throttle-percent { margin-top: 10px; font-size: 14px; color: #cfeff8; text-align:center; font-weight:700; }
     .lever {
       position: absolute;
       left: 50%;
@@ -247,6 +268,7 @@ if (isset($_SESSION["LAR_level"])) {
       user-select: none;
       transition: opacity 0.3s;
       top: 0; /* initial top, will be adjusted by JS */
+      z-index: 3;
     }
     .lever.disabled {
       opacity: 0.5;
@@ -254,23 +276,28 @@ if (isset($_SESSION["LAR_level"])) {
     }
 
     /* Helm */
-    .helm { display: flex; justify-content: center; gap: 25px; }
+    .helm { display: flex; justify-content: center; gap: 28px; align-items: center; }
+    .helm > div { display:flex; flex-direction:column; align-items:center; gap:8px; }
     .helm button {
       background: #0f172a;
       color: #e2e8f0;
       border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 10px 18px;
-      font-size: 20px;
+      border-radius: 14px;
+      padding: 16px 24px;
+      font-size: 24px;
+      font-weight: 800;
+      width: 72px;
+      height: 62px;
       cursor: pointer;
-      transition: transform 0.2s, border-color 0.2s, opacity 0.3s;
+      transition: transform 0.12s, border-color 0.12s, opacity 0.3s;
+      display: flex; align-items: center; justify-content: center;
     }
     .helm button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
-    .helm button:hover:not(:disabled) { border-color: #38bdf8; transform: scale(1.1); }
-    .helm-label { text-align: center; margin-top: 4px; font-size: 10px; }
+    .helm button:hover:not(:disabled) { border-color: #38bdf8; transform: scale(1.06); }
+    .helm-label { text-align: center; margin-top: 6px; font-size: 12px; letter-spacing: 1px; }
 
     /* === Feeds indicator styles === */
     .feed-container {
@@ -321,9 +348,8 @@ if (isset($_SESSION["LAR_level"])) {
 
     <!-- Center: Compass -->
     <section class="heading-display">
-      <div class="heading-readout" id="headingReadout">Heading: 0°</div>
-      <div class="dial">
-        <svg id="compassSvg" width="350" height="350" viewBox="0 0 350 350" aria-hidden="true">
+        <div class="dial">
+          <svg id="compassSvg" width="350" height="350" viewBox="0 0 350 350" aria-hidden="true">
           <g id="compassCard">
             <circle cx="175" cy="175" r="165" fill="none" stroke="#3a3a3a" stroke-width="2"/>
             <g id="ticks"></g>
@@ -335,15 +361,18 @@ if (isset($_SESSION["LAR_level"])) {
             <polygon points="20,0 30,30 30,70 20,80 10,70 10,30"/>
           </svg>
         </div>
-      </div>
+        </div>
+        <div class="heading-readout" id="headingReadout">Heading: 0°</div>
     </section>
 
     <!-- Right: Controls -->
     <aside class="panel">
       <div class="telegraph" id="telegraph">
         <div class="scale"></div>
+        <div class="scale-fill" id="scaleFill"></div>
         <div class="lever" id="lever">STOP</div>
       </div>
+      <div id="telegraphPercent" class="throttle-percent">0%</div>
       <div class="helm">
         <div>
           <button id="port">&lt;</button>
@@ -416,6 +445,8 @@ if (isset($_SESSION["LAR_level"])) {
 // --- Telegraph / Lever logic ---
 const telegraph = document.getElementById('telegraph');
 const lever = document.getElementById('lever');
+const scaleFill = document.getElementById('scaleFill');
+const percentEl = document.getElementById('telegraphPercent');
 const speeds = ['FULL AHEAD','HALF AHEAD','SLOW AHEAD','DEAD SLOW AHEAD','STOP','DEAD SLOW ASTERN','SLOW ASTERN','HALF ASTERN','FULL ASTERN'];
 let currentIndex = speeds.indexOf('STOP');
 if (telegraph && lever) {
@@ -433,6 +464,8 @@ if (telegraph && lever) {
       lever.style.top = `${top}px`;
       lever.textContent = speeds[i];
       currentIndex = i;
+        // update visual fill and percent display
+        updateTelegraphVisual(i);
     }
   }
   function forceLeverToStop() {
@@ -468,6 +501,55 @@ if (telegraph && lever) {
     const idx = Math.max(0, Math.min(speeds.length - 1, row));
     setLeverToIndex(idx);
   });
+}
+// map index to percent (positive=AHEAD, negative=ASTERN)
+function indexToPercent(i) {
+  switch(i) {
+    case 0: return {percent:100, dir:'AHEAD'}; // FULL AHEAD
+    case 1: return {percent:50, dir:'AHEAD'};  // HALF AHEAD
+    case 2: return {percent:25, dir:'AHEAD'};  // SLOW AHEAD
+    case 3: return {percent:15, dir:'AHEAD'};  // DEAD SLOW AHEAD
+    case 4: return {percent:0, dir:'STOP'};    // STOP
+    case 5: return {percent:15, dir:'ASTERN'}; // DEAD SLOW ASTERN
+    case 6: return {percent:25, dir:'ASTERN'}; // SLOW ASTERN
+    case 7: return {percent:50, dir:'ASTERN'}; // HALF ASTERN
+    case 8: return {percent:100, dir:'ASTERN'}; // FULL ASTERN
+    default: return {percent:0, dir:'STOP'};
+  }
+}
+
+  function updateTelegraphVisual(i) {
+  if (!telegraph || !scaleFill || !percentEl) return;
+  const rect = telegraph.getBoundingClientRect();
+  const centerY = rect.height / 2;
+  const mapping = indexToPercent(i);
+  const p = mapping.percent;
+  // reset
+  if (p === 0) {
+    scaleFill.style.height = '0px';
+    scaleFill.style.top = `${centerY}px`;
+    scaleFill.style.background = '#9ca3af';
+    percentEl.textContent = '0%';
+    return;
+  }
+  // Use half-height as the max distance (fills occupy either upper half or lower half)
+  const half = Math.floor(rect.height / 2);
+  const fillPx = Math.round((p / 100) * half);
+  if (mapping.dir === 'AHEAD') {
+    // fill upwards from center (cap at top)
+    const topPx = Math.max(0, Math.round(centerY - fillPx));
+    scaleFill.style.top = `${topPx}px`;
+    scaleFill.style.height = `${fillPx}px`;
+    scaleFill.style.background = '#22c55e';
+    percentEl.textContent = `${p}% AHEAD`;
+  } else {
+    // ASTERN: fill downwards from center (cap at bottom)
+    const topPx = Math.round(centerY);
+    scaleFill.style.top = `${topPx}px`;
+    scaleFill.style.height = `${fillPx}px`;
+    scaleFill.style.background = '#ef4444';
+    percentEl.textContent = `${p}% ASTERN`;
+  }
 }
         // --- Compass logic ---
         const ticksG = document.getElementById('ticks');
@@ -525,14 +607,24 @@ if (ticksG && labelsG && headingReadout && boat) {
         starboardBtn.addEventListener('pointerdown', () => startHelm(+1));
         window.addEventListener('pointerup', stopHelm);
         window.addEventListener('pointercancel', stopHelm);
-        // keyboard controls for helm
-        window.addEventListener('keydown', (e) => {
-          if (e.key === 'ArrowLeft') startHelm(-1);
-          if (e.key === 'ArrowRight') startHelm(+1);
-        });
-        window.addEventListener('keyup', (e) => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') stopHelm();
-        });
+        // keyboard controls for helm and telegraph
+                window.addEventListener('keydown', (e) => {
+                  if (e.key === 'ArrowLeft') startHelm(-1);
+                  if (e.key === 'ArrowRight') startHelm(+1);
+                  if (e.key === 'ArrowUp') {
+                    // move lever up (toward FULL AHEAD)
+                    const ni = Math.max(0, currentIndex - 1);
+                    setLeverToIndex(ni);
+                  }
+                  if (e.key === 'ArrowDown') {
+                    // move lever down (toward FULL ASTERN)
+                    const ni = Math.min(speeds.length - 1, currentIndex + 1);
+                    setLeverToIndex(ni);
+                  }
+                });
+                window.addEventListener('keyup', (e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') stopHelm();
+                });
       });
   </script>
 </body>

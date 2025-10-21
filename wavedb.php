@@ -1,7 +1,7 @@
 <?php
 $host = "localhost";
 $user = "root"; // default in XAMPP
-$pass = "MGW4v3J0ll1b33";     // default empty
+$pass = "MGW4V3J0LL1B33";     // default empty
 $dbname = "wave_db";
 
 $conn = new mysqli($host, $user, $pass, $dbname);
