@@ -2,8 +2,10 @@
 $timestamp = date('Y-m-d h:i:s A');
 // ──────────────── EVENT LOG AJAX HANDLER (Robust, Python-style) ────────────────
 if (isset($_POST['log_to_event_log'])) {
-    session_start();
-    include 'wavedb.php';
+  // Use admin session name when handling admin pages; for log API prefer explicit user param
+  session_name('WAVE_ADMIN');
+  session_start();
+  include 'wavedb.php';
   // PHP version of classifyLog to match JS logic
   function classifyLog($type, $message) {
     $msg = strtolower($message);
@@ -30,8 +32,14 @@ if (isset($_POST['log_to_event_log'])) {
       return ["success" => false, "error" => $e->getMessage()];
     }
   }
-  $user = $_SESSION['username'] ?? 'Unknown';
+  // Prefer an explicit username sent from the client (user dashboard) so logs reflect origin
+  $user = $_POST['user'] ?? $_SESSION['username'] ?? 'Unknown';
   $desc = $_POST['desc'] ?? '';
+  $event_source = $_POST['event_source'] ?? '';
+  if ($event_source) {
+    // If DB doesn't have an explicit column, embed source into description for now
+    $desc = $desc . " [source:" . $event_source . "]";
+  }
   $type = $_POST['status'] ?? '';
   $event_status = classifyLog($type, $desc);
   $result = log_notification($conn, $user, $desc, $event_status);
@@ -40,7 +48,11 @@ if (isset($_POST['log_to_event_log'])) {
   exit;
 }
 
+// Use explicit admin session name for the admin dashboard to avoid collision with user sessions
+session_name('WAVE_ADMIN');
 session_start();
+// include socket secret helper for generating short token
+include_once __DIR__ . '/socket_secret.php';
 // Strict cache control to prevent back after logout
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Cache-Control: post-check=0, pre-check=0', false);
@@ -249,7 +261,7 @@ $userCount = count($users);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WAVE Dashboard</title>
+<title>Admin Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Righteous&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="icon" type="image/png" href="wave_logo2.png">
@@ -266,13 +278,13 @@ $userCount = count($users);
   .cat-info td.category { color: #1976d2; font-weight: bold; }
   .cat-info td.category::before { background: #2196f3; }
 /* Compact Monitoring Cards */
-.water-grid { display: grid; grid-template-columns: 2fr 3fr; gap: 12px; margin-bottom: 8px; }
-.big-card.sensor-card { min-height: 160px; font-size: 1.05rem; }
+.water-grid { display: grid; grid-template-columns: 2fr 3fr; gap: 10px; margin-bottom: 6px; }
+.big-card.sensor-card { min-height: 120px; font-size: 1.0rem; }
 .right-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 10px; }
-.sensor-card { background: linear-gradient(145deg, #7ed6f7, #5faee3); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); color: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 48px; font-size: 1rem; padding: 10px 8px; }
+.sensor-card { background: linear-gradient(145deg, #7ed6f7, #5faee3); border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); color: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 40px; font-size: 0.95rem; padding: 8px 6px; }
 .sensor-card.wide { grid-column: span 2; }
-.sensor-card h3 { margin: 0 0 6px 0; font-size: 1.02rem; font-weight: 700; }
-.sensor-card p { margin: 0; font-size: 1.08rem; font-weight: 600; }
+.sensor-card h3 { margin: 0 0 6px 0; font-size: 0.95rem; font-weight: 700; }
+.sensor-card p { margin: 0; font-size: 1rem; font-weight: 700; }
 html { font-size: 16px; }
 html, body {
   height: 100vh;
@@ -351,7 +363,7 @@ input[type="password"]::-ms-clear { display: none !important; }
 input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; visibility: hidden !important; }
 .error-msg { color: #e53935; font-size: 13px; margin-top: 6px; display: none; }
 /* Live chart area */
-.chart-container { height: 400px; margin-top: 20px; }
+.chart-container { height: 360px; margin-top: 18px; padding-bottom: 8px; }
 /* Optional: keep the separate "last updated" DOM element hidden since we draw it on chart */
 #lastUpdatedLabel { display: none; }
 
@@ -369,7 +381,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .st-grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:20px; }
 .st-card {
   background: linear-gradient(145deg, #2b6777, #1e5162);
-  border-radius: 16px; padding: 20px;
+  border-radius: 14px; padding: 12px; /* reduced padding for compact cards */
   box-shadow: 0 8px 18px rgba(0,0,0,0.3);
   text-align:center; color:#f1faff;
   transition: transform .2s ease, box-shadow .3s ease;
@@ -379,15 +391,15 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 /* 👉 Match sidebar icon style for cards’ icons */
 .st-icon {
   display:inline-flex; align-items:center; justify-content:center;
-  width:56px; height:56px;
-  border-radius:12px;
+  width:52px; height:52px; /* slightly smaller */
+  border-radius:12px; position:relative;
   background: linear-gradient(180deg,#49d7ff,#1aa6ff);
   color:#fff; font-size:22px; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 10px rgba(0,0,0,.25);
   margin-bottom: 10px;
 }
 
 /* status dot */
-.st-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; background:#bbb; vertical-align:middle; }
+.st-dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:#bbb; vertical-align:middle; position: absolute; top:6px; right:6px; }
 .st-on  { background:#06d6a0; box-shadow:0 0 12px #06d6a0; }
 .st-off { background:#e63946; box-shadow:0 0 6px #e63946; }
 
@@ -404,9 +416,9 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .st-btn { font-size:15px; padding:10px 18px; border:none; border-radius:10px; cursor:pointer; font-weight:700; color:#fff; margin:8px 8px 0 0; box-shadow:0 4px 12px rgba(0,0,0,.3); }
 .st-diag    { background: linear-gradient(135deg, #00b4d8, #0096c7); }
 .st-diag:hover { background: linear-gradient(135deg, #0096c7, #0077b6); }
-.st-powerOn { background: linear-gradient(135deg, #06d6a0, #1b9aaa); }
+.st-powerOn { background: linear-gradient(135deg, #20e6b1, #06d6a0); color: #fff; border-radius: 9999px; padding:10px 18px; box-shadow: 0 8px 28px rgba(6,214,160,0.18), 0 0 24px rgba(6,214,160,0.12); border: 1px solid rgba(255,255,255,0.12); }
 .st-powerOn:hover { background: linear-gradient(135deg, #04ad84, #15807c); }
-.st-powerOff{ background: linear-gradient(135deg, #e63946, #d00000); }
+.st-powerOff{ background: linear-gradient(135deg, #ff6b6b, #e63946); color: #fff; border-radius: 9999px; padding:10px 18px; box-shadow: 0 8px 28px rgba(230,57,70,0.14), 0 0 18px rgba(230,57,70,0.10); border: 1px solid rgba(255,255,255,0.12); }
 .st-powerOff:hover { background: linear-gradient(135deg, #d00000, #9d0208); }
 .st-clear   { background: linear-gradient(135deg, #ffb703, #fb8500); }
 .st-clear:hover { background: linear-gradient(135deg, #fb8500, #d97706); }
@@ -429,10 +441,20 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .delete-btn { background: linear-gradient(135deg,#00b4ff,#0177d2); color:#fff; border:none; box-shadow:0 4px 10px rgba(0,0,0,0.12); }
 .action-btn:active { transform: translateY(1px); }
 
-/* Vessel status pill */
-#st-vesselStatus { font-weight: bold; margin-top: 10px; padding: 8px 12px; border-radius: 8px; display: inline-block; }
-.st-vessel-on  { background:#06d6a0; color:#fff; box-shadow:0 0 12px #06d6a0; }
-.st-vessel-off { background:#e63946; color:#fff; box-shadow:0 0 8px #e63946; }
+/* Vessel status pill (enhanced glowing pill to match new UI) */
+#st-vesselStatus { font-weight: 700; margin-top: 10px; padding: 10px 18px; border-radius: 9999px; display: inline-block; font-size: 0.98rem; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
+.st-vessel-on  {
+  background: linear-gradient(135deg,#20e6b1,#06d6a0) !important;
+  color:#ffffff !important;
+  box-shadow: 0 8px 28px rgba(6,214,160,0.25), 0 0 28px rgba(6,214,160,0.18) !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+}
+.st-vessel-off {
+  background: linear-gradient(135deg,#ff6b6b,#e63946) !important;
+  color:#ffffff !important;
+  box-shadow: 0 8px 28px rgba(230,57,70,0.18), 0 0 18px rgba(230,57,70,0.14) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+}
 
 /* Logs UI (Notifications tab – full-width, no dropdown) */
 .notifications-wrap { background:#fff; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.08); padding:16px; }
@@ -444,6 +466,40 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 
 /* Small perf hint badge (optional) */
 .badge-hint { display:inline-block; margin-left:8px; padding:4px 10px; font-size:0.85rem; color:#0f5132; background:#d1e7dd; border-radius:9999px; }
+</style>
+</style>
+<style>
+  /* Override: match user_dashboard pill/button sizing and spacing for pixel parity */
+  /* Make action buttons slightly smaller and pill-shaped like user view */
+  .st-btn {
+    font-size: 14px !important;
+    padding: 8px 14px !important;
+    border-radius: 20px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+  }
+  .st-pill {
+    padding: 6px 12px !important;
+    font-size: 0.88rem !important;
+    border-radius: 20px !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px rgba(0,0,0,.06) !important;
+  }
+  /* Vessel pill: smaller radius and matching padding */
+  #st-vesselStatus {
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 20px !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+  }
+  /* Power button variants: keep gradients but tighten shadow and padding */
+  .st-powerOn, .st-powerOff {
+    padding: 8px 14px !important;
+    border-radius: 20px !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12) !important;
+  }
+  .st-powerOn { box-shadow: 0 6px 18px rgba(6,214,160,0.12) !important; }
+  .st-powerOff{ box-shadow: 0 6px 18px rgba(230,57,70,0.12) !important; }
 </style>
 </head>
 <body>
@@ -675,7 +731,7 @@ body {
      ────────────────────────── -->
 <div id="waterSection" class="section" style="<?php echo ($current_tab === 'water') ? '' : 'display:none;'; ?>"> 
   <div class="water-quality-section"> 
-    <h2>Monitoring <span id="perfHint" class="badge-hint" style="display:none;">live updates paused</span></h2> 
+    <h2> <span id="perfHint" class="badge-hint" style="display:none;">live updates paused</span></h2> 
     <div class="water-grid"> 
       <div class="big-card sensor-card" onclick="switchChart('WQI')"> 
         <h3>Water Quality Index</h3> 
@@ -795,15 +851,14 @@ function confirmDelete(username) {
 <!-- ──────────────────────────
      FEED LOGS
      ────────────────────────── -->
-<div id="feedlogsSection" class="section" style="<?php echo ($current_tab === 'feedlogs') ? '' : 'display:none;'; ?>">
-  <iframe src="feeder.php" style="width:100%;height:80vh;border:none;"></iframe>
+  <div id="feedlogsSection" class="section" style="<?php echo ($current_tab === 'feedlogs') ? '' : 'display:none;'; ?>">
+    <iframe src="feeder.php?from=admin" style="width:100%;height:80vh;border:none;"></iframe>
 </div>
 
 <!-- ──────────────────────────
      NOTIFICATIONS (FULL-WIDTH LOGS – no dropdown)
      ────────────────────────── -->
 <div id="notificationsSection" class="section" style="<?php echo ($current_tab === 'notifications') ? '' : 'display:none;'; ?>">
-  <h2>Notifications Logs</h2>
   <div class="notifications-wrap">
     <div class="tool-actions" style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
   <input id="notifSearch" type="text" placeholder="Search logs..." class="notif-searchbar" oninput="filterNotificationLogs()">
@@ -1066,7 +1121,7 @@ function filterNotificationLogs() {
      TOOLS  (SENSORS & SYSTEM ACTIONS AS COMBO BOX)
      ────────────────────────── -->
 <div id="toolsSection" class="section" style="<?php echo ($current_tab === 'tools') ? 'position:relative;' : 'display:none; position:relative;'; ?>">
-  <h2>System Tools</h2>
+  <h2></h2>
 
   <!-- Top-left Combo Box -->
   <div class="tools-toolbar">
@@ -1444,9 +1499,17 @@ function setupChart(sensorKey){
       },
       scales: {
         x: { display: true, ticks: { maxRotation: 0, autoSkip: true } },
-        y: { min: 0, max: conf.max, ticks: { stepSize: Math.max(1, Math.round(conf.max/5)) } }
+        y: {
+          min: 0,
+          max: conf.max,
+          ticks: {
+            stepSize: Math.max(1, Math.round(conf.max/5)),
+            padding: 8,
+            font: { size: 12 }
+          }
+        }
       },
-      layout: { padding: { bottom: 22 } }
+      layout: { padding: { bottom: 32 } }
     },
     plugins: [lastValueLabelPlugin, lastUpdatedPlugin]
   });
@@ -1571,6 +1634,11 @@ function ST_setVesselState(state) {
     if (toggleAllBtn) { toggleAllBtn.disabled = true; toggleAllBtn.style.opacity = ".6"; toggleAllBtn.style.cursor = "not-allowed"; }
   }
   localStorage.setItem("vesselState", state);
+  try {
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now(), origin: 'local' });
+    }
+  } catch(e) {}
 }
 
 /* Unified Power Button */
@@ -1637,13 +1705,19 @@ function ST_addLog(type, message){
   const tr = document.createElement("tr");
   // Parse timestamp and message
   let timestamp = new Date().toLocaleString();
-  let msg = message;
-  if (message.startsWith('[USER]') || message.startsWith('[ADMIN]')) {
-    const match = message.match(/^\[(USER|ADMIN)\]\s*(.*)$/);
-    if (match) msg = match[0];
-  } else {
-    msg = '[ADMIN] ' + message;
-  }
+  let msg = message || '';
+  try {
+    // Collapse duplicate role prefixes like "[USER] user1 [USER] action" -> keep only first prefix
+    let seenRole = false;
+    msg = msg.replace(/\[(USER|ADMIN)\]\s*/gi, function(full, role){
+      if (!seenRole) { seenRole = true; return '[' + role.toUpperCase() + '] '; }
+      return '';
+    }).trim();
+    // If no role prefix present at all, default to ADMIN for admin page logs
+    if (!/^\[(USER|ADMIN)\]/i.test(msg)) {
+      msg = '[ADMIN] ' + msg;
+    }
+  } catch (e) { /* fallback to raw message */ }
   const category = classifyLog(type, message);
   tr.className = `st-log-entry cat-${category}`;
   tr.dataset.category = category;
@@ -1854,6 +1928,11 @@ function ST_toggleAllSensors(state){
     if(dot) dot.className="st-dot "+(state?"st-on":"st-off");
   });
   ST_addLog("action",`All sensors turned ${state?"ON":"OFF"}`);
+  try {
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','ammo','do','load1','load2','ultra'], value: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now() });
+    }
+  } catch(e) {}
 }
 
 /* 🔵 MERGED: Single toggle button handler with auto label */
@@ -1958,6 +2037,122 @@ window.addEventListener('load', ()=>{
     }
   });
 
+  // Sync sensor toggles and vessel state across tabs (admin <-> user)
+  window.addEventListener('storage', function(e) {
+    try {
+      // Sensor keys: st-sensor-<key>
+      if (e.key && e.key.startsWith('st-sensor-')) {
+        const key = e.key.replace('st-sensor-', '');
+        const val = e.newValue === '1';
+        const sw = document.getElementById('st-sw-' + key);
+        const dot = document.getElementById('st-dot-' + key);
+        if (sw) sw.checked = val;
+        if (dot) dot.className = 'st-dot ' + (val ? 'st-on' : 'st-off');
+      }
+
+      // Vessel state sync
+      if (e.key === 'vesselState') {
+        const state = e.newValue || 'OFF';
+        ST_setVesselState(state);
+        // Add a log entry to indicate remote change
+  ST_addLog('info', `vessel state changed to ${state} (remote)`);
+      }
+    } catch (err) { /* ignore */ }
+  });
+
+  // --- Socket.IO client for LAN realtime (192.168.0.2:3000) ---
+    try {
+    const SOCKET_HOST = 'http://192.168.0.2:3000';
+    const s = document.createElement('script');
+    s.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
+    s.onload = function() {
+      try {
+        // Create an auth token derived from server-side secret (HMAC of username + role + ts)
+        const socketAuth = (function(){
+          const user = '<?php echo addslashes($_SESSION['username']); ?>';
+          const role = 'ADMIN';
+          const ts = Date.now();
+          // Server will validate token using same secret; token format: user:role:ts:hmac
+          // We don't compute HMAC in JS; ask server to provide a pre-signed token via inline var
+          return '<?php echo hash_hmac("sha256", $_SESSION['username'] . "|ADMIN|" . time(), WAVE_SOCKET_SECRET); ?>::<?php echo addslashes($_SESSION['username']); ?>::ADMIN::' + ts;
+        })();
+        window.socket = io(SOCKET_HOST, { transports: ['websocket'], auth: { token: socketAuth } });
+        window.socket.on('connect', () => console.log('socket connected', window.socket.id));
+
+        const __WAVE_ADMIN_USER = '<?php echo addslashes($_SESSION['username']); ?>';
+        window.socket.on('sensor.change', payload => {
+          try {
+            const key = payload.key;
+            const isOn = !!payload.value;
+            const sw = document.getElementById('st-sw-' + key);
+            const dot = document.getElementById('st-dot-' + key);
+            if (sw) sw.checked = isOn;
+            if (dot) dot.className = 'st-dot ' + (isOn ? 'st-on' : 'st-off');
+            try { localStorage.setItem('st-sensor-' + key, isOn ? '1' : '0'); } catch(e){}
+            // Avoid logging if this event originated from this same admin client
+            if (!(payload.origin === 'local' && payload.user === __WAVE_ADMIN_USER)) {
+              const roleLabel = payload.role ? payload.role.toUpperCase() : 'USER';
+              const userLabel = payload.user || 'remote';
+              ST_addLog('info', `[${roleLabel}] ${userLabel} set ${key.toUpperCase()} ${isOn ? 'ON' : 'OFF'}`);
+            }
+          } catch(e){}
+        });
+
+        window.socket.on('vessel.change', payload => {
+          try {
+            ST_setVesselState(payload.state);
+            try { localStorage.setItem('vesselState', payload.state); } catch(e){}
+            // Don't duplicate log if this change was initiated locally by this admin
+            if (!(payload.origin === 'local' && payload.user === __WAVE_ADMIN_USER)) {
+              const roleLabel = payload.role ? payload.role.toUpperCase() : 'USER';
+              const userLabel = payload.user || 'remote';
+              ST_addLog('info', `[${roleLabel}] ${userLabel} changed vessel state to ${payload.state}`);
+            }
+          } catch(e){}
+        });
+
+        window.socket.on('log.event', payload => {
+          try {
+            // Avoid duplicate logging for local-origin events
+            if (payload.origin === 'local' && payload.user === __WAVE_ADMIN_USER) return;
+            const roleLabel = payload.role ? payload.role.toUpperCase() : null;
+            const userLabel = payload.user || null;
+            let msg = payload.message || payload.desc || '';
+            if (roleLabel && userLabel && !/^\[(USER|ADMIN)\]/i.test(msg)) {
+              msg = `[${roleLabel}] ${userLabel} ${msg}`;
+            }
+            ST_addLog(payload.type || 'info', msg);
+          } catch(e) {}
+        });
+
+      } catch(e) { console.warn('socket init failed', e); }
+    };
+    document.head.appendChild(s);
+  } catch(e) { console.warn('socket script error', e); }
+
+  // Wrap admin toggles to emit events
+  const origAdmin_ST_toggleSensor = window.ST_toggleSensor;
+  window.ST_toggleSensor = function(input, sensor) {
+    origAdmin_ST_toggleSensor(input, sensor);
+    try {
+      const isOn = !!input.checked;
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('sensor.change', { key: sensor, value: isOn, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now() });
+      }
+    } catch(e){}
+  };
+
+  const origAdmin_ST_togglePower = window.ST_togglePower;
+  window.ST_togglePower = function() {
+    origAdmin_ST_togglePower();
+    try {
+      const state = localStorage.getItem('vesselState') || 'OFF';
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now() });
+      }
+    } catch(e){}
+  };
+
   // Poll server for new event_log rows (only when Notifications tab is active)
   let lastLogId = 0;
   function fetchLastLogIdFromLocal() {
@@ -1985,6 +2180,11 @@ window.addEventListener('load', ()=>{
       data.rows.forEach(r => {
         const ts = r.event_timestamp || new Date().toLocaleString();
         const message = r.event_desc || '';
+        // Skip rows that were forwarded from sockets to avoid duplicate logs in the UI (they are already shown via socket)
+        if (String(message).includes('[source:socket]')) {
+          lastLogId = Math.max(lastLogId, parseInt(r.id,10) || lastLogId);
+          return;
+        }
         const logObj = { type: r.event_status ? r.event_status.toLowerCase() : 'info', timestamp: ts, message: message, category: r.event_status ? r.event_status.toLowerCase() : 'info' };
         // Prevent duplicates: check recent entries
         const dup = local.slice(0,40).some(l => l.message === logObj.message && l.timestamp === logObj.timestamp);

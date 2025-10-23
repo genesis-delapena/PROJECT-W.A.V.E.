@@ -16,10 +16,18 @@ $error = "";
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
   // --- Invisible reCAPTCHA verification ---
   $token = $_POST['g-recaptcha-response'] ?? '';
-  $secretKey = "6LcIlusrAAAAAOeKfRP3d1085AHRKK_Lae7pUkFW";
 
-  $response = @file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret=$secretKey&response=$token");
-  $result   = $response ? json_decode($response, true) : ["success" => false];
+  // Skip reCAPTCHA for local/IP development (localhost, 127.0.0.1, or direct IP hostnames)
+  $host = $_SERVER['HTTP_HOST'] ?? '';
+  $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+  $isLocal = (strpos($host, 'localhost') !== false) || filter_var($host, FILTER_VALIDATE_IP) || in_array($remote, ['127.0.0.1', '::1']);
+  if ($isLocal) {
+    $result = ["success" => true];
+  } else {
+    $secretKey = "6LcIlusrAAAAAOeKfRP3d1085AHRKK_Lae7pUkFW";
+    $response = @file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret=$secretKey&response=$token");
+    $result   = $response ? json_decode($response, true) : ["success" => false];
+  }
 
   if (empty($result["success"])) {
       $_SESSION["error"] = "CAPTCHA verification failed.";

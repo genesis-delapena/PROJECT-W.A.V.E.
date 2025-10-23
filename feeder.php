@@ -1,3 +1,13 @@
+<?php
+// feeder.php: honor caller context so it uses the correct named session when embedded
+$from = isset($_GET['from']) ? strtolower($_GET['from']) : '';
+if ($from === 'admin') {
+  session_name('WAVE_ADMIN');
+} elseif ($from === 'user') {
+  session_name('WAVE_USER');
+}
+session_start();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>

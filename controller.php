@@ -1,4 +1,11 @@
 <?php
+// Respect caller context (iframe or link) so we open the correct named session
+$from = isset($_GET['from']) ? strtolower($_GET['from']) : '';
+if ($from === 'admin') {
+  session_name('WAVE_ADMIN');
+} elseif ($from === 'user') {
+  session_name('WAVE_USER');
+}
 session_start();
 // Prevent browser caching of protected pages
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -449,6 +456,7 @@ const scaleFill = document.getElementById('scaleFill');
 const percentEl = document.getElementById('telegraphPercent');
 const speeds = ['FULL AHEAD','HALF AHEAD','SLOW AHEAD','DEAD SLOW AHEAD','STOP','DEAD SLOW ASTERN','SLOW ASTERN','HALF ASTERN','FULL ASTERN'];
 let currentIndex = speeds.indexOf('STOP');
+let lastSentTelegraphIndex = null; // avoid sending duplicate messages
 if (telegraph && lever) {
   function setLeverToIndex(i, retryCount = 0) {
     const rect = telegraph.getBoundingClientRect();
@@ -466,6 +474,17 @@ if (telegraph && lever) {
       currentIndex = i;
         // update visual fill and percent display
         updateTelegraphVisual(i);
+        // send telegraph message when index changes
+        try {
+          const msg = indexToTelegraphMsg(i);
+          if (lastSentTelegraphIndex !== i && msg) {
+            lastSentTelegraphIndex = i;
+            // fire-and-forget; log success/failure in console
+            sendPcMessage(msg).then(ok => console.log('[Telegraph] sent', msg, ok)).catch(e => console.warn('[Telegraph] send error', e));
+          }
+        } catch (e) {
+          console.warn('telegraph send error', e);
+        }
     }
   }
   function forceLeverToStop() {
@@ -515,6 +534,22 @@ function indexToPercent(i) {
     case 7: return {percent:50, dir:'ASTERN'}; // HALF ASTERN
     case 8: return {percent:100, dir:'ASTERN'}; // FULL ASTERN
     default: return {percent:0, dir:'STOP'};
+  }
+}
+
+// map index to telegraph message string expected by PC
+function indexToTelegraphMsg(i) {
+  switch(i) {
+    case 0: return '10:AHEAD:100'; // FULL AHEAD
+    case 1: return '10:AHEAD:50';  // HALF AHEAD
+    case 2: return '10:AHEAD:25';  // SLOW AHEAD
+    case 3: return '10:AHEAD:15';  // DEAD SLOW AHEAD
+    case 4: return '10:AHEAD:0';   // STOP -> AHEAD:0 per spec
+    case 5: return '10:ASTERN:15'; // DEAD SLOW ASTERN
+    case 6: return '10:ASTERN:25'; // SLOW ASTERN
+    case 7: return '10:ASTERN:50'; // HALF ASTERN
+    case 8: return '10:ASTERN:100';// FULL ASTERN
+    default: return null;
   }
 }
 
@@ -584,8 +619,12 @@ if (ticksG && labelsG && headingReadout && boat) {
     text.textContent = cardinal[deg]; labelsG.appendChild(text);
   }
 }
-        let heading = 0;
-        let helmInterval = null;
+  let heading = 0;
+  let helmInterval = null;
+  // helm tap/hold helpers
+  let helmPulseTimer = null; // timer that sends 10:STOP after a tap
+  let helmPressStart = null; // timestamp when a UI press started
+  const HELM_TAP_THRESHOLD = 350; // ms threshold to consider a press a tap
         function normalize(d) { d %= 360; if (d < 0) d += 360; return d; }
         function updateHeadingUI() {
           boat.style.transform = `translate(-50%,-50%) rotate(${heading}deg)`;
@@ -593,6 +632,7 @@ if (ticksG && labelsG && headingReadout && boat) {
         }
         const portBtn = document.getElementById('port');
         const starboardBtn = document.getElementById('starboard');
+
         function startHelm(direction) {
           if (helmInterval) clearInterval(helmInterval);
           helmInterval = setInterval(() => {
@@ -600,30 +640,174 @@ if (ticksG && labelsG && headingReadout && boat) {
             updateHeadingUI();
           }, 50);
         }
+
         function stopHelm() {
           if (helmInterval) { clearInterval(helmInterval); helmInterval = null; }
         }
-        portBtn.addEventListener('pointerdown', () => startHelm(-1));
-        starboardBtn.addEventListener('pointerdown', () => startHelm(+1));
+
+        function scheduleHelmStopMessage(delay = 1000) {
+          if (helmPulseTimer) clearTimeout(helmPulseTimer);
+          helmPulseTimer = setTimeout(() => {
+            sendPcMessage('10:STOP').then(ok => console.log('[PC → RPi] sent STOP', ok)).catch(e => console.warn('[PC → RPi] STOP error', e));
+            helmPulseTimer = null;
+          }, delay);
+        }
+
+        // UI pointer handlers: detect tap vs hold
+        portBtn.addEventListener('pointerdown', (ev) => {
+          helmPressStart = Date.now();
+          try { ev.target.setPointerCapture(ev.pointerId); } catch (e) {}
+          startHelm(-1);
+        });
+        portBtn.addEventListener('pointerup', (ev) => {
+          const dur = helmPressStart ? (Date.now() - helmPressStart) : Infinity;
+          try { ev.target.releasePointerCapture(ev.pointerId); } catch (e) {}
+          stopHelm();
+          if (dur < HELM_TAP_THRESHOLD) {
+            // tap: single pulse then auto-stop after 1s
+            sendPcMessage('10:PS').then(ok => console.log('[PC → RPi] sent PS', ok)).catch(e => console.warn('[PC → RPi] PS error', e));
+            scheduleHelmStopMessage(2000);
+          } else {
+            // hold-release: ensure we notify STOP immediately
+            sendPcMessage('10:STOP').then(ok => console.log('[PC → RPi] sent STOP', ok)).catch(e => console.warn('[PC → RPi] STOP error', e));
+          }
+          helmPressStart = null;
+        });
+
+        // Click handler: emulate a short tap for users who click (not press-and-hold)
+        portBtn.addEventListener('click', (ev) => {
+          // visual short pulse
+          startHelm(-1);
+          setTimeout(() => stopHelm(), 120);
+          sendPcMessage('10:PS').then(ok => console.log('[PC → RPi] sent PS (click)', ok)).catch(e => console.warn('[PC → RPi] PS error', e));
+          scheduleHelmStopMessage(2000);
+        });
+
+        // Note: keyboard activation on buttons removed; use Arrow keys or pointer/click only
+
+        starboardBtn.addEventListener('pointerdown', (ev) => {
+          helmPressStart = Date.now();
+          try { ev.target.setPointerCapture(ev.pointerId); } catch (e) {}
+          startHelm(+1);
+        });
+        starboardBtn.addEventListener('pointerup', (ev) => {
+          const dur = helmPressStart ? (Date.now() - helmPressStart) : Infinity;
+          try { ev.target.releasePointerCapture(ev.pointerId); } catch (e) {}
+          stopHelm();
+          if (dur < HELM_TAP_THRESHOLD) {
+            sendPcMessage('10:SS').then(ok => console.log('[PC → RPi] sent SS', ok)).catch(e => console.warn('[PC → RPi] SS error', e));
+            scheduleHelmStopMessage(1000);
+          } else {
+            sendPcMessage('10:STOP').then(ok => console.log('[PC → RPi] sent STOP', ok)).catch(e => console.warn('[PC → RPi] STOP error', e));
+          }
+          helmPressStart = null;
+        });
+
+        // Click handler for starboard
+        starboardBtn.addEventListener('click', (ev) => {
+          startHelm(+1);
+          setTimeout(() => stopHelm(), 120);
+          sendPcMessage('10:SS').then(ok => console.log('[PC → RPi] sent SS (click)', ok)).catch(e => console.warn('[PC → RPi] SS error', e));
+          scheduleHelmStopMessage(1000);
+        });
+
+        // Note: keyboard activation on buttons removed; use Arrow keys or pointer/click only
+
+        // ensure pointer cancels also stop helm
         window.addEventListener('pointerup', stopHelm);
         window.addEventListener('pointercancel', stopHelm);
         // keyboard controls for helm and telegraph
-                window.addEventListener('keydown', (e) => {
-                  if (e.key === 'ArrowLeft') startHelm(-1);
-                  if (e.key === 'ArrowRight') startHelm(+1);
-                  if (e.key === 'ArrowUp') {
-                    // move lever up (toward FULL AHEAD)
-                    const ni = Math.max(0, currentIndex - 1);
-                    setLeverToIndex(ni);
-                  }
-                  if (e.key === 'ArrowDown') {
-                    // move lever down (toward FULL ASTERN)
-                    const ni = Math.min(speeds.length - 1, currentIndex + 1);
-                    setLeverToIndex(ni);
-                  }
-                });
+        // Helper: send a PC-originated message to Flask server (/send_from_pc)
+        const FLASK_CANDIDATES = [
+          'http://192.168.0.2:5000',
+          'http://192.168.0.3:5000',
+          'http://localhost:5000'
+        ];
+
+        async function sendPcMessage(msg) {
+          // First try same-origin proxy to avoid CORS issues
+          try {
+            const proxyRes = await fetch('pc_proxy.php', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: msg })
+            });
+            const text = await proxyRes.text().catch(()=>null);
+            if (proxyRes.ok) {
+              console.log('[PC → RPi] sent via proxy:', msg, 'response:', proxyRes.status, text);
+              return true;
+            }
+            console.warn('[PC → RPi] proxy returned', proxyRes.status, text);
+          } catch (e) {
+            console.warn('[PC → RPi] proxy error', e);
+          }
+
+          // Fallback: try direct Flask candidates (may be blocked by CORS)
+          for (const base of FLASK_CANDIDATES) {
+            try {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 1800);
+              const res = await fetch(base + '/send_from_pc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg }),
+                signal: controller.signal
+              });
+              clearTimeout(timeout);
+              if (res.ok) {
+                console.log('[PC → RPi] sent:', msg, 'via', base);
+                return true;
+              }
+            } catch (err) {
+              // try next candidate
+            }
+          }
+          console.warn('[PC → RPi] failed to send message to any Flask candidate:', msg);
+          return false;
+        }
+
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowLeft') {
+            // start helm turning
+            if (!e.repeat) {
+              // initial press = tap or hold start
+              startHelm(-1);
+              // schedule STOP in case user only tapped
+              scheduleHelmStopMessage(1000);
+              // send the PS command once on initial press
+              sendPcMessage('10:PS').then(ok => console.log('[PC → RPi] sent PS', ok)).catch(() => {});
+            } else {
+              // repeated keydown: continue turning; clear any scheduled stop
+              if (helmPulseTimer) { clearTimeout(helmPulseTimer); helmPulseTimer = null; }
+            }
+          }
+          if (e.key === 'ArrowRight') {
+            if (!e.repeat) {
+              startHelm(+1);
+              scheduleHelmStopMessage(1000);
+              sendPcMessage('10:SS').then(ok => console.log('[PC → RPi] sent SS', ok)).catch(() => {});
+            } else {
+              if (helmPulseTimer) { clearTimeout(helmPulseTimer); helmPulseTimer = null; }
+            }
+          }
+          if (e.key === 'ArrowUp') {
+            // move lever up (toward FULL AHEAD)
+            const ni = Math.max(0, currentIndex - 1);
+            setLeverToIndex(ni);
+          }
+          if (e.key === 'ArrowDown') {
+            // move lever down (toward FULL ASTERN)
+            const ni = Math.min(speeds.length - 1, currentIndex + 1);
+            setLeverToIndex(ni);
+          }
+        });
                 window.addEventListener('keyup', (e) => {
-                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') stopHelm();
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    // on key release, stop turning and send STOP immediately
+                    stopHelm();
+                    if (helmPulseTimer) { clearTimeout(helmPulseTimer); helmPulseTimer = null; }
+                    sendPcMessage('10:STOP').then(ok => console.log('[PC → RPi] sent STOP', ok)).catch(e => console.warn('[PC → RPi] STOP error', e));
+                  }
                 });
       });
   </script>

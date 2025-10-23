@@ -92,14 +92,33 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["verify"])) {
   $clear->execute();
   $clear->close();
 
+    // We started this script with the default session to read pending_user/pending_level.
+    // To create a role-specific session cookie we must close the current session, delete
+    // the old session cookie, then start a new session with a different session_name.
+    // Close the temporary (login) session but do NOT delete other session cookies
+    // This avoids removing unrelated session cookies (e.g., admin sessions in other tabs)
+    unset($_SESSION['resend_until'], $_SESSION['resend_count']);
+    // close current session (keeps its cookie intact)
+    session_write_close();
+
+    // Start a new session with role-specific name (this will create a separate session cookie)
+    if ($level == 2) {
+      session_name('WAVE_ADMIN');
+    } else {
+      session_name('WAVE_USER');
+    }
+    session_start();
+    session_regenerate_id(true);
     $_SESSION["username"]  = $user;
     $_SESSION["LAR_level"] = $level;
-    unset($_SESSION["pending_user"], $_SESSION["pending_level"], $_SESSION['resend_until'], $_SESSION['resend_count']);
+    // remove any temporary pending values if present in this new session
+    unset($_SESSION["pending_user"], $_SESSION["pending_level"]);
 
     if ($level == 2) {
       header("Location: ad_dashboard.php?log=login&tab=water");
     } else {
-      header("Location: user_dashboard.php?tab=water");
+      // Append ?log=login so admin dashboard (if open) can register the user login via URL hook
+      header("Location: user_dashboard.php?tab=water&log=login");
     }
     exit;
     } else {
