@@ -1,6 +1,6 @@
 <?php
 // URL of the Flask server
-$serverUrl = "http://192.168.1.3:5000/get";
+$serverUrl = "http://192.168.0.3:5000/get";
 
 // Initialize cURL
 $ch = curl_init();

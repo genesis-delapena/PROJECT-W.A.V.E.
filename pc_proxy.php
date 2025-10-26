@@ -6,7 +6,7 @@
 // Configure the Flask server address reachable from the PHP host
 $flask_hosts = [
     'http://192.168.0.2:5000',
-    'http://192.168.1.3:5000'
+    'http://192.168.0.3:5000'
 ];
 
 header('Content-Type: application/json');

@@ -1,3 +1,4 @@
+
 <?php
 // Use a separate session name for user dashboard to avoid replacing admin session data
 session_name('WAVE_USER');

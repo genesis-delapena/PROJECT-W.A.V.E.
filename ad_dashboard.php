@@ -1604,7 +1604,8 @@ function ST_toggleSensor(input, sensor) {
   const isOn = !!input.checked;
   if (dot) dot.className = "st-dot " + (isOn ? "st-on" : "st-off");
   localStorage.setItem(key, isOn ? "1" : "0");
-  ST_addLog("action", `${sensor.toUpperCase()} sensor turned ${isOn ? "ON" : "OFF"}`);
+  // Do not write a local log here. The server will emit a canonical `log.event`
+  // containing the role and "by <username>" suffix which all clients should display.
 }
 function ST_loadSensorStates() {
   ST_SENSOR_KEYS.forEach(k => {
@@ -1616,7 +1617,7 @@ function ST_loadSensorStates() {
   });
 }
 /* Vessel state */
-function ST_setVesselState(state) {
+function ST_setVesselState(state, emit=true) {
   const statusEl = document.getElementById("st-vesselStatus");
   const powerBtn = document.getElementById("st-powerBtn");
   const sensorSwitches = document.querySelectorAll(".st-switch input[type='checkbox']");
@@ -1635,7 +1636,8 @@ function ST_setVesselState(state) {
   }
   localStorage.setItem("vesselState", state);
   try {
-    if (window.socket && window.socket.connected) {
+    // Only emit when this was initiated locally
+    if (emit && window.socket && window.socket.connected) {
       window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now(), origin: 'local' });
     }
   } catch(e) {}
@@ -1653,8 +1655,8 @@ function ST_togglePower() {
       confirmButtonText:'Yes, shutdown'
     }).then((res)=>{
       if (res.isConfirmed) {
-        ST_setVesselState("OFF");
-        ST_addLog("alert","Vessel shutdown initiated by Admin");
+  ST_setVesselState("OFF");
+  // Server will emit authoritative log.event for the shutdown action
         const rs = document.getElementById("st-rebootStatus");
         if (rs) rs.textContent = "Shutting down vessel...";
           setTimeout(()=>{
@@ -1672,8 +1674,8 @@ function ST_togglePower() {
       confirmButtonText:'Yes, power on'
     }).then((res)=>{
       if (res.isConfirmed) {
-        ST_setVesselState("ON");
-        ST_addLog("alert","Vessel powered ON by Admin");
+  ST_setVesselState("ON");
+  // Server will emit authoritative log.event for the power-on action
         const rs = document.getElementById("st-rebootStatus");
         if (rs) rs.textContent = "Vessel powering on...";
           setTimeout(()=>{
@@ -1699,12 +1701,14 @@ function classifyLog(type, message) {
   return 'action';
 }
 
-function ST_addLog(type, message){
+function ST_addLog(type, message, opts){
+  // opts: { noDb: true } => do not POST this log to server (used when rendering server rows)
+  opts = opts || {};
   const box = document.getElementById("st-logBox");
   if (!box) return; // only when Notification tab DOM exists
   const tr = document.createElement("tr");
   // Parse timestamp and message
-  let timestamp = new Date().toLocaleString();
+  let timestamp = (opts.timestamp) ? opts.timestamp : new Date().toLocaleString();
   let msg = message || '';
   try {
     // Collapse duplicate role prefixes like "[USER] user1 [USER] action" -> keep only first prefix
@@ -1744,25 +1748,27 @@ function ST_addLog(type, message){
   ST_saveLogs();
   if (typeof ST_loadLogs === 'function') ST_loadLogs();
 
-  // Send log to server for DB storage (robust, with debug)
-  try {
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", window.location.pathname, true);
-    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-    xhr.onload = function() {
-      if (xhr.status !== 200) {
-        console.error('DB log failed', xhr.responseText);
-      } else {
-        try {
-          var resp = JSON.parse(xhr.responseText);
-          if (!resp.success) {
-            console.error('DB log error:', resp.error);
-          }
-        } catch (e) { console.error('DB log parse error', e, xhr.responseText); }
-      }
-    };
-    xhr.send("log_to_event_log=1&desc=" + encodeURIComponent(msg) + "&status=" + encodeURIComponent(type.toUpperCase()));
-  } catch (e) { console.error('DB log AJAX error', e); }
+  // Send log to server for DB storage unless caller asked us not to
+  if (!opts.noDb) {
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", window.location.pathname, true);
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      xhr.onload = function() {
+        if (xhr.status !== 200) {
+          console.error('DB log failed', xhr.responseText);
+        } else {
+          try {
+            var resp = JSON.parse(xhr.responseText);
+            if (!resp.success) {
+              console.error('DB log error:', resp.error);
+            }
+          } catch (e) { console.error('DB log parse error', e, xhr.responseText); }
+        }
+      };
+      xhr.send("log_to_event_log=1&desc=" + encodeURIComponent(msg) + "&status=" + encodeURIComponent(type.toUpperCase()));
+    } catch (e) { console.error('DB log AJAX error', e); }
+  }
 }
 function ST_saveLogs(){
   const box = document.getElementById("st-logBox");
@@ -1927,11 +1933,11 @@ function ST_toggleAllSensors(state){
     if(sw) sw.checked=state;
     if(dot) dot.className="st-dot "+(state?"st-on":"st-off");
   });
-  ST_addLog("action",`All sensors turned ${state?"ON":"OFF"}`);
+    // Do not locally log bulk sensor toggles; the server will emit a canonical `log.event` for this action.
   try {
     if (window.socket && window.socket.connected) {
-      window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','ammo','do','load1','load2','ultra'], value: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now() });
-    }
+          window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','ammo','do','load1','load2','ultra'], value: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now(), origin: 'local' });
+        }
   } catch(e) {}
 }
 
@@ -1962,11 +1968,20 @@ function performLogout(){
     // vessel off
     ST_setVesselState("OFF");
     ST_addLog("alert","System shutdown initiated by Admin");
-    ST_addLog("info","<?php echo addslashes($_SESSION['username']); ?> logged out");
-    setTimeout(()=>{
-      // give a tiny moment to flush localStorage writes
-      setTimeout(()=>{ window.location.href='waveout.php'; }, 50);
-    }, 500);
+    try {
+      if (window.socket && window.socket.connected) {
+        // Ask server to persist and broadcast the logout event
+        window.socket.emit('log.event', { type: 'info', message: 'logged out', ts: Date.now(), origin: 'local' });
+        // give server a short moment to process before redirect
+        setTimeout(()=>{ window.location.href='waveout.php'; }, 250);
+      } else {
+        // fallback: local log (will POST to server)
+        ST_addLog("info","<?php echo addslashes($_SESSION['username']); ?> logged out");
+        setTimeout(()=>{ window.location.href='waveout.php'; }, 200);
+      }
+    } catch(e) {
+      setTimeout(()=>{ window.location.href='waveout.php'; }, 200);
+    }
   } catch(e) {
     // fail-safe redirect
     window.location.href='waveout.php';
@@ -2016,10 +2031,65 @@ window.addEventListener('load', ()=>{
 
   // ── Option 1: GET param hooks for login logging ──
   // If you redirect to this page with ?log=login we record a login event to Notifications.
+  // Helper: wait for socket to be ready (connected) before emitting; fallback after timeout
+  function emitWhenSocketReady(evName, payload, timeoutMs, fallback) {
+    timeoutMs = timeoutMs || 2000;
+    const start = Date.now();
+    (function tryEmit(){
+      try {
+        if (window.socket && window.socket.connected) {
+          window.socket.emit(evName, payload);
+          return;
+        }
+      } catch(e) {}
+      if (Date.now() - start < timeoutMs) {
+        setTimeout(tryEmit, 100);
+        return;
+      }
+      // timeout -> call fallback if provided
+      try { if (typeof fallback === 'function') fallback(); } catch(e) {}
+    })();
+  }
+
+  // Sync status UI (top-right badge)
+  function createSyncStatus() {
+    if (document.getElementById('st-syncStatus')) return;
+    const el = document.createElement('div');
+    el.id = 'st-syncStatus';
+    el.style.position = 'fixed';
+    el.style.top = '86px';
+    el.style.right = '18px';
+    el.style.zIndex = '9999';
+    el.style.background = 'rgba(255,255,255,0.95)';
+    el.style.border = '1px solid #ddd';
+    el.style.padding = '6px 10px';
+    el.style.borderRadius = '18px';
+    el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
+    el.style.fontSize = '13px';
+    el.style.color = '#222';
+    el.innerHTML = '<span id="st-syncDot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:#ccc;vertical-align:middle"></span><span id="st-syncText">Sync: offline</span><span id="st-syncTime" style="margin-left:8px;color:#666;font-size:11px"></span>';
+    document.body.appendChild(el);
+  }
+  function updateSyncStatus(state, info) {
+    const dot = document.getElementById('st-syncDot');
+    const text = document.getElementById('st-syncText');
+    const time = document.getElementById('st-syncTime');
+    if (!dot || !text) return;
+    if (state === 'connected') { dot.style.background = '#2ecc71'; text.textContent = 'Sync: connected'; }
+    else if (state === 'disconnected') { dot.style.background = '#e74c3c'; text.textContent = 'Sync: disconnected'; }
+    else if (state === 'active') { dot.style.background = '#f39c12'; text.textContent = 'Sync: active'; }
+    else { dot.style.background = '#95a5a6'; text.textContent = 'Sync: offline'; }
+    if (time) time.textContent = info ? ('last: ' + info) : '';
+  }
+
   const params = new URLSearchParams(window.location.search);
   const logParam = params.get('log');
   if (logParam === 'login') {
-    ST_addLog("info","[ADMIN] <?php echo addslashes($_SESSION['username']); ?> logged in");
+    // ensure sync status UI exists
+    createSyncStatus();
+    emitWhenSocketReady('log.event', { type: 'info', message: 'logged in', ts: Date.now(), origin: 'local' }, 2000, function(){
+      ST_addLog("info","[ADMIN] <?php echo addslashes($_SESSION['username']); ?> logged in");
+    });
     params.delete('log');
     const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
     window.history.replaceState({}, '', newUrl);
@@ -2054,8 +2124,7 @@ window.addEventListener('load', ()=>{
       if (e.key === 'vesselState') {
         const state = e.newValue || 'OFF';
         ST_setVesselState(state);
-        // Add a log entry to indicate remote change
-  ST_addLog('info', `vessel state changed to ${state} (remote)`);
+        // Do not create a separate "remote" log here; the server emits a canonical log.event
       }
     } catch (err) { /* ignore */ }
   });
@@ -2076,8 +2145,9 @@ window.addEventListener('load', ()=>{
           // We don't compute HMAC in JS; ask server to provide a pre-signed token via inline var
           return '<?php echo hash_hmac("sha256", $_SESSION['username'] . "|ADMIN|" . time(), WAVE_SOCKET_SECRET); ?>::<?php echo addslashes($_SESSION['username']); ?>::ADMIN::' + ts;
         })();
-        window.socket = io(SOCKET_HOST, { transports: ['websocket'], auth: { token: socketAuth } });
-        window.socket.on('connect', () => console.log('socket connected', window.socket.id));
+  window.socket = io(SOCKET_HOST, { transports: ['websocket'], auth: { token: socketAuth } });
+  window.socket.on('connect', () => { console.log('socket connected', window.socket.id); try { updateSyncStatus('connected', '<?php echo addslashes($_SESSION['username']); ?>'); } catch(e){} });
+  window.socket.on('disconnect', () => { try { updateSyncStatus('disconnected'); } catch(e){} });
 
         const __WAVE_ADMIN_USER = '<?php echo addslashes($_SESSION['username']); ?>';
         window.socket.on('sensor.change', payload => {
@@ -2089,39 +2159,28 @@ window.addEventListener('load', ()=>{
             if (sw) sw.checked = isOn;
             if (dot) dot.className = 'st-dot ' + (isOn ? 'st-on' : 'st-off');
             try { localStorage.setItem('st-sensor-' + key, isOn ? '1' : '0'); } catch(e){}
-            // Avoid logging if this event originated from this same admin client
-            if (!(payload.origin === 'local' && payload.user === __WAVE_ADMIN_USER)) {
-              const roleLabel = payload.role ? payload.role.toUpperCase() : 'USER';
-              const userLabel = payload.user || 'remote';
-              ST_addLog('info', `[${roleLabel}] ${userLabel} set ${key.toUpperCase()} ${isOn ? 'ON' : 'OFF'}`);
-            }
+            // UI-only update: logging is handled via server-emitted `log.event` to avoid duplicate/verbose messages
           } catch(e){}
         });
 
         window.socket.on('vessel.change', payload => {
           try {
-            ST_setVesselState(payload.state);
+            // Apply remote change but do not re-emit to avoid loops
+            ST_setVesselState(payload.state, false);
             try { localStorage.setItem('vesselState', payload.state); } catch(e){}
-            // Don't duplicate log if this change was initiated locally by this admin
-            if (!(payload.origin === 'local' && payload.user === __WAVE_ADMIN_USER)) {
-              const roleLabel = payload.role ? payload.role.toUpperCase() : 'USER';
-              const userLabel = payload.user || 'remote';
-              ST_addLog('info', `[${roleLabel}] ${userLabel} changed vessel state to ${payload.state}`);
-            }
+            // Do not create a separate log here; server will emit a single `log.event` with the cleaned message
           } catch(e){}
         });
 
         window.socket.on('log.event', payload => {
           try {
-            // Avoid duplicate logging for local-origin events
-            if (payload.origin === 'local' && payload.user === __WAVE_ADMIN_USER) return;
-            const roleLabel = payload.role ? payload.role.toUpperCase() : null;
-            const userLabel = payload.user || null;
-            let msg = payload.message || payload.desc || '';
-            if (roleLabel && userLabel && !/^\[(USER|ADMIN)\]/i.test(msg)) {
-              msg = `[${roleLabel}] ${userLabel} ${msg}`;
-            }
-            ST_addLog(payload.type || 'info', msg);
+            // Update sync status with last-received time
+            try { updateSyncStatus('active', new Date().toLocaleTimeString()); } catch(e) {}
+            // Always use the server-sent canonical message. The server normalizes
+            // role and username and appends the "by <username>" suffix so the UI
+            // remains consistent across devices.
+            const msg = String(payload.message || payload.desc || '').trim();
+            if (msg) ST_addLog(payload.type || 'info', msg, { noDb: true, timestamp: payload.ts ? new Date(payload.ts).toLocaleString() : undefined });
           } catch(e) {}
         });
 
@@ -2132,12 +2191,12 @@ window.addEventListener('load', ()=>{
 
   // Wrap admin toggles to emit events
   const origAdmin_ST_toggleSensor = window.ST_toggleSensor;
-  window.ST_toggleSensor = function(input, sensor) {
+    window.ST_toggleSensor = function(input, sensor) {
     origAdmin_ST_toggleSensor(input, sensor);
     try {
       const isOn = !!input.checked;
       if (window.socket && window.socket.connected) {
-        window.socket.emit('sensor.change', { key: sensor, value: isOn, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now() });
+        window.socket.emit('sensor.change', { key: sensor, value: isOn, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now(), origin: 'local' });
       }
     } catch(e){}
   };
@@ -2145,12 +2204,7 @@ window.addEventListener('load', ()=>{
   const origAdmin_ST_togglePower = window.ST_togglePower;
   window.ST_togglePower = function() {
     origAdmin_ST_togglePower();
-    try {
-      const state = localStorage.getItem('vesselState') || 'OFF';
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now() });
-      }
-    } catch(e){}
+    // Do NOT emit here — ST_setVesselState handles emission after user confirms via SweetAlert.
   };
 
   // Poll server for new event_log rows (only when Notifications tab is active)
@@ -2178,8 +2232,8 @@ window.addEventListener('load', ()=>{
       const local = JSON.parse(localStorage.getItem('systemLogs') || '[]');
       // Server returns new rows in descending order (newest first)
       data.rows.forEach(r => {
-        const ts = r.event_timestamp || new Date().toLocaleString();
-        const message = r.event_desc || '';
+  const ts = r.event_timestamp || new Date().toLocaleString();
+  const message = r.event_desc || '';
         // Skip rows that were forwarded from sockets to avoid duplicate logs in the UI (they are already shown via socket)
         if (String(message).includes('[source:socket]')) {
           lastLogId = Math.max(lastLogId, parseInt(r.id,10) || lastLogId);
@@ -2191,7 +2245,7 @@ window.addEventListener('load', ()=>{
         if (!dup) {
           // Because server rows are newest-first, unshift keeps newest on top
           local.unshift(logObj);
-          try { ST_addLog(logObj.type, logObj.message); } catch(e) {}
+          try { ST_addLog(logObj.type, logObj.message, { noDb: true, timestamp: ts }); } catch(e) {}
         }
         lastLogId = Math.max(lastLogId, parseInt(r.id,10) || lastLogId);
       });

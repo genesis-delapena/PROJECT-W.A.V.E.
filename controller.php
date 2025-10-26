@@ -400,6 +400,7 @@ if (isset($_SESSION["LAR_level"])) {
   <div class="status-bar">
     <div class="status-item"><div>WIFI</div>--</div>
     <div class="status-item"><div>GPS</div>--</div>
+  <div class="status-item" id="caTemp"><div>CA TEMP</div>--</div>
     <div class="status-item"><div>SPEED</div>--</div>
     <div class="status-item"><div>WATCHDOG</div>--</div>
   </div>
@@ -806,10 +807,47 @@ if (ticksG && labelsG && headingReadout && boat) {
                     // on key release, stop turning and send STOP immediately
                     stopHelm();
                     if (helmPulseTimer) { clearTimeout(helmPulseTimer); helmPulseTimer = null; }
-                    sendPcMessage('10:STOP').then(ok => console.log('[PC → RPi] sent STOP', ok)).catch(e => console.warn('[PC → RPi] STOP error', e));
+                        sendPcMessage('10:STOP').then(ok => console.log('[PC → RPi] sent STOP', ok)).catch(e => console.warn('[PC → RPi] STOP error', e));
+                      }
+                    });
+
+            // --- CA temperature polling from Server_PC.py ---
+            // Polls fetch_sensors.php which proxies to the Flask Server_PC /get endpoint
+            const caTempEl = document.getElementById('caTemp');
+            async function pollCaTemp() {
+              try {
+                const res = await fetch('fetch_sensors.php', { cache: 'no-store' });
+                if (!res.ok) throw new Error('fetch failed ' + res.status);
+                const data = await res.json();
+                // data expected: { from: 'rpi'|'pc', message: { IMU_TEMP_C: 34.47, ... } }
+                const msg = data && data.message ? data.message : null;
+                if (msg && (typeof msg.IMU_TEMP_C !== 'undefined')) {
+                  const v = parseFloat(msg.IMU_TEMP_C);
+                  if (!Number.isNaN(v)) {
+                    // show one decimal place
+                    caTempEl.innerHTML = `<div>CA TEMP</div>${v.toFixed(1)}°C`;
+                    // optional: colorize if hot/cold thresholds
+                    if (v >= 60) { caTempEl.style.background = '#7f1d1d'; caTempEl.style.color = '#fff7f7'; }
+                    else if (v >= 40) { caTempEl.style.background = '#b45309'; caTempEl.style.color = ''; }
+                    else { caTempEl.style.background = ''; caTempEl.style.color = ''; }
+                    return;
                   }
-                });
-      });
-  </script>
+                }
+                // fallback display when data missing
+                caTempEl.innerHTML = `<div>CA TEMP</div>--`;
+                caTempEl.style.background = '';
+                caTempEl.style.color = '';
+              } catch (err) {
+                // network or parse error — show offline symbol
+                try { caTempEl.innerHTML = `<div>CA TEMP</div>--`; caTempEl.style.background = ''; caTempEl.style.color = ''; } catch(e){}
+                console.debug('CA temp poll error', err);
+              }
+            }
+            // start polling every 2s
+            setInterval(pollCaTemp, 2000);
+            // run once immediately
+            pollCaTemp().catch(()=>{});
+          });
+      </script>
 </body>
 </html>

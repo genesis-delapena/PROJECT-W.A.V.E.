@@ -9,7 +9,13 @@ CORS(app)
 # Store last message (what the RPi sends)
 # Expected structure:
 # {"from": "rpi", "message": {"WQI": ..., "PH": ..., "TURB": ..., "TEMP": ..., "AMMO": ..., "DO": ..., "last_updated": "..."}}
-last_message = {"from": "server", "message": {"WQI": 0, "PH": 0, "TURB": 0, "TEMP": 0, "AMMO": 0, "DO": 0}}
+"""
+Store two slots separately:
+ - last_message['rpi']  : the latest sensor dict posted by the RPi
+ - last_message['pc']   : the last PC-originated string message (controls)
+This prevents control strings from overwriting the sensor dict.
+"""
+last_message = {"rpi": {"WQI": 0, "PH": 0, "TURB": 0, "TEMP": 0, "AMMO": 0, "DO": 0}, "pc": ""}
 
 @app.route("/")
 def index():
@@ -22,7 +28,8 @@ def send_from_pc():
     global last_message
     data = request.get_json(force=True) or {}
     msg = data.get("message", "")
-    last_message = {"from": "pc", "message": msg}
+    # store PC-originated string separately so it doesn't clobber sensor dict
+    last_message['pc'] = msg
     print(f"[PC → RPi] {msg}")
     return jsonify({"status": "ok"})
 
@@ -32,9 +39,8 @@ def receive_message():
     global last_message
     data = request.get_json(force=True) or {}
     msg = data.get("message", {})
-
-    # keep structure stable: {"from":"rpi","message":{...sensor dict...}}
-    last_message = {"from": "rpi", "message": msg}
+    # update only the rpi slot with the latest sensor dict
+    last_message['rpi'] = msg if isinstance(msg, dict) else {}
     print("[RPi → PC] Received sensor payload:")
     if isinstance(msg, dict):
         for k, v in msg.items():
@@ -46,7 +52,8 @@ def receive_message():
 # PHP dashboard fetches here
 @app.route("/get", methods=["GET"])
 def get_message():
-    # Returns the whole wrapper with "from" and "message"
+    # Returns both rpi sensors and pc last message
+    # Example: { "rpi": {...sensor dict...}, "pc": "10:AHEAD:100" }
     return jsonify(last_message)
 
 def console_sender():
