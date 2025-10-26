@@ -71,7 +71,7 @@ if (!isset($_SESSION["username"])) {
    ───────────────────────────────────────────────────────────────────────────── */
 if (isset($_GET['api']) && $_GET['api'] === 'get') {
     // Adjust the Flask server IP/port here if needed:
-    $flaskUrl = "http://192.168.1.3:5000/get";
+    $flaskUrl = "http://192.168.0.3:5000/get";
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $flaskUrl);
@@ -1529,7 +1529,7 @@ function switchChart(sensorKey){ activeSensor = sensorKey; setupChart(sensorKey)
 /* ──────────────────────────────────────────────────────────────────
    MONITORING: Fetch from Flask with same-origin proxy fallback
    ────────────────────────────────────────────────────────────────── */
-const FLASK_BASE = "http://192.168.1.3:5000";
+const FLASK_BASE = "http://192.168.0.3:5000";
 async function robustFetchJson() {
   const sameOrigin = `${window.location.pathname}?api=get`;
   const remote     = `${FLASK_BASE}/get`;
