@@ -501,6 +501,20 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
   .st-powerOn { box-shadow: 0 6px 18px rgba(6,214,160,0.12) !important; }
   .st-powerOff{ box-shadow: 0 6px 18px rgba(230,57,70,0.12) !important; }
 </style>
+
+<!-- Quick overrides: hide sensor status dots and remove red glow behind power/vessel controls -->
+<style>
+  /* Remove the small red/green status dot on sensor cards */
+  .st-dot { display: none !important; }
+
+  /* Remove the red glow/box-shadow behind the Shutdown/Power button and vessel status pill */
+  .st-powerOff, .st-vessel-off, #st-powerBtn.st-powerOff, #st-vesselStatus.st-vessel-off {
+    box-shadow: none !important;
+  }
+
+  /* Optional: make the power-off button less visually aggressive while keeping its color */
+  #st-powerBtn.st-powerOff { border: 1px solid rgba(0,0,0,0.06) !important; }
+</style>
 </head>
 <body>
 <script>
@@ -1604,8 +1618,21 @@ function ST_toggleSensor(input, sensor) {
   const isOn = !!input.checked;
   if (dot) dot.className = "st-dot " + (isOn ? "st-on" : "st-off");
   localStorage.setItem(key, isOn ? "1" : "0");
-  // Do not write a local log here. The server will emit a canonical `log.event`
-  // containing the role and "by <username>" suffix which all clients should display.
+  // Emit to server when socket connected; otherwise create a local log so actions
+  // are visible even when the client is offline/disconnected.
+  try {
+    const username = '<?php echo addslashes($_SESSION['username']); ?>';
+    const labels = { ph: 'PH', turb: 'Turbidity', temp: 'Temperature', ammo: 'Ammonia', do: 'Dissolved Oxygen', load1: 'Loadcell 1', load2: 'Loadcell 2', ultra: 'Feed Level (Ultrasonic)' };
+    const label = labels[sensor] || sensor;
+    const actionText = isOn ? `turned ON ${label}` : `turned OFF ${label}`;
+    if (window.socket && window.socket.connected) {
+      // Let server emit canonical log to other clients
+      window.socket.emit('sensor.toggle', { sensor: sensor, value: isOn, user: username, role: 'ADMIN', ts: Date.now(), origin: 'local' });
+    } else {
+      // Local fallback: write to UI logs and POST to server (ST_addLog will attempt DB POST)
+      ST_addLog('action', `[ADMIN] ${username} ${actionText}`);
+    }
+  } catch (e) { /* ignore logging errors */ }
 }
 function ST_loadSensorStates() {
   ST_SENSOR_KEYS.forEach(k => {
@@ -1636,9 +1663,13 @@ function ST_setVesselState(state, emit=true) {
   }
   localStorage.setItem("vesselState", state);
   try {
-    // Only emit when this was initiated locally
+    // Only emit when this was initiated locally; if socket missing, create a local log
+    const username = '<?php echo addslashes($_SESSION['username']); ?>';
     if (emit && window.socket && window.socket.connected) {
-      window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now(), origin: 'local' });
+      window.socket.emit('vessel.change', { state: state, user: username, role: 'ADMIN', ts: Date.now(), origin: 'local' });
+    } else if (emit) {
+      const action = (state === 'ON') ? 'powered ON the vessel' : 'shut down the vessel';
+      ST_addLog('alert', `[ADMIN] ${username} ${action}`);
     }
   } catch(e) {}
 }
@@ -1933,11 +1964,16 @@ function ST_toggleAllSensors(state){
     if(sw) sw.checked=state;
     if(dot) dot.className="st-dot "+(state?"st-on":"st-off");
   });
-    // Do not locally log bulk sensor toggles; the server will emit a canonical `log.event` for this action.
+    // Prefer emitting to server when socket connected; otherwise log locally so the
+    // action appears in the UI even when there's no socket connection.
   try {
+    const username = '<?php echo addslashes($_SESSION['username']); ?>';
     if (window.socket && window.socket.connected) {
-          window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','ammo','do','load1','load2','ultra'], value: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'ADMIN', ts: Date.now(), origin: 'local' });
-        }
+      window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','ammo','do','load1','load2','ultra'], value: state, user: username, role: 'ADMIN', ts: Date.now(), origin: 'local' });
+    } else {
+      const action = state ? 'turned ON all sensors' : 'turned OFF all sensors';
+      ST_addLog('action', `[ADMIN] ${username} ${action}`);
+    }
   } catch(e) {}
 }
 
@@ -1998,7 +2034,8 @@ window.addEventListener('load', ()=>{
   if (toggleBtn) toggleBtn.textContent = ST_allSensorsCurrentlyOn() ? "ALL OFF" : "ALL ON";
 
   const state = localStorage.getItem("vesselState") || "ON";
-  ST_setVesselState(state);
+  // Restore UI state without emitting/logging on page load
+  ST_setVesselState(state, false);
 
   // Controller tab click handler
   const controllerLink = document.getElementById('controllerLink');
@@ -2082,6 +2119,10 @@ window.addEventListener('load', ()=>{
     if (time) time.textContent = info ? ('last: ' + info) : '';
   }
 
+  // Always show sync UI immediately on load so both connected and disconnected
+  // clients see their status without needing to trigger a login param.
+  createSyncStatus();
+
   const params = new URLSearchParams(window.location.search);
   const logParam = params.get('log');
   if (logParam === 'login') {
@@ -2123,8 +2164,8 @@ window.addEventListener('load', ()=>{
       // Vessel state sync
       if (e.key === 'vesselState') {
         const state = e.newValue || 'OFF';
-        ST_setVesselState(state);
-        // Do not create a separate "remote" log here; the server emits a canonical log.event
+        // Apply remote change but avoid creating a local log (server will emit canonical log)
+        ST_setVesselState(state, false);
       }
     } catch (err) { /* ignore */ }
   });
@@ -2134,24 +2175,82 @@ window.addEventListener('load', ()=>{
     const SOCKET_HOST = 'http://192.168.0.2:3000';
     const s = document.createElement('script');
     s.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
-    s.onload = function() {
+  s.onload = function() {
       try {
         // Create an auth token derived from server-side secret (HMAC of username + role + ts)
         const socketAuth = (function(){
           const user = '<?php echo addslashes($_SESSION['username']); ?>';
           const role = 'ADMIN';
-          const ts = Date.now();
-          // Server will validate token using same secret; token format: user:role:ts:hmac
-          // We don't compute HMAC in JS; ask server to provide a pre-signed token via inline var
-          return '<?php echo hash_hmac("sha256", $_SESSION['username'] . "|ADMIN|" . time(), WAVE_SOCKET_SECRET); ?>::<?php echo addslashes($_SESSION['username']); ?>::ADMIN::' + ts;
+          // Use a single server-side timestamp that was used to compute the HMAC
+          <?php $__socket_ts = time(); $__socket_hmac = hash_hmac('sha256', $_SESSION['username'] . "|ADMIN|" . $__socket_ts, WAVE_SOCKET_SECRET); ?>
+          const ts = <?php echo $__socket_ts; ?>;
+          // Server will validate token using same secret; token format: hmac::user::role::ts
+          return '<?php echo $__socket_hmac; ?>::<?php echo addslashes($_SESSION['username']); ?>::ADMIN::' + ts;
         })();
   window.socket = io(SOCKET_HOST, { transports: ['websocket'], auth: { token: socketAuth } });
   window.socket.on('connect', () => { console.log('socket connected', window.socket.id); try { updateSyncStatus('connected', '<?php echo addslashes($_SESSION['username']); ?>'); } catch(e){} });
   window.socket.on('disconnect', () => { try { updateSyncStatus('disconnected'); } catch(e){} });
 
+  // Announce presence to other clients when connected so they can show "active" state
+  window.socket.on('connect', () => {
+    try {
+      const me = '<?php echo addslashes($_SESSION['username']); ?>';
+      window.socket.emit('presence', { user: me, ts: Date.now(), origin: 'admin' });
+    } catch(e) {}
+  });
+
+  // Announce current local state (sensors + vessel) on connect so other clients
+  // can immediately sync their UI without requiring a manual refresh.
+  window.socket.on('connect', () => {
+    try {
+      const me = '<?php echo addslashes($_SESSION['username']); ?>';
+      const statePayload = { user: me, ts: Date.now(), origin: 'admin', vesselState: localStorage.getItem('vesselState') || 'OFF', sensors: {} };
+      (ST_SENSOR_KEYS || []).forEach(k => { try { statePayload.sensors[k] = (localStorage.getItem('st-sensor-' + k) === '1'); } catch(e) { statePayload.sensors[k] = false; } });
+      window.socket.emit('announce.state', statePayload);
+    } catch(e) {}
+  });
+
+  // Show when other clients announce presence
+  window.socket.on('presence', payload => {
+    try {
+      const me = '<?php echo addslashes($_SESSION['username']); ?>';
+      if (payload && payload.user && payload.user !== me) {
+        updateSyncStatus('active', payload.user + ' @ ' + new Date(payload.ts || Date.now()).toLocaleTimeString());
+      }
+    } catch(e) {}
+  });
+
+        // Apply state announces from other clients: update switches and vessel state
+        window.socket.on('state.announce', payload => {
+          try {
+            const me = '<?php echo addslashes($_SESSION['username']); ?>';
+            if (!payload || payload.user === me) return; // ignore our own announces
+            // Apply sensors
+            if (payload.sensors && typeof payload.sensors === 'object') {
+              Object.keys(payload.sensors).forEach(k => {
+                try {
+                  const isOn = !!payload.sensors[k];
+                  const sw = document.getElementById('st-sw-' + k);
+                  const dot = document.getElementById('st-dot-' + k);
+                  if (sw) sw.checked = isOn;
+                  if (dot) dot.className = 'st-dot ' + (isOn ? 'st-on' : 'st-off');
+                  try { localStorage.setItem('st-sensor-' + k, isOn ? '1' : '0'); } catch(e) {}
+                } catch(e) {}
+              });
+            }
+            // Apply vessel state but avoid emitting loops
+            if (payload.vesselState) {
+              try { ST_setVesselState(String(payload.vesselState || 'OFF'), false); localStorage.setItem('vesselState', String(payload.vesselState || 'OFF')); } catch(e) {}
+            }
+            // Update sync UI to indicate who triggered the state
+            try { updateSyncStatus('active', payload.user + ' @ ' + new Date(payload.ts || Date.now()).toLocaleTimeString()); } catch(e) {}
+          } catch(e) {}
+        });
+
         const __WAVE_ADMIN_USER = '<?php echo addslashes($_SESSION['username']); ?>';
         window.socket.on('sensor.change', payload => {
           try {
+            console.log('received sensor.change', payload);
             const key = payload.key;
             const isOn = !!payload.value;
             const sw = document.getElementById('st-sw-' + key);
@@ -2174,6 +2273,7 @@ window.addEventListener('load', ()=>{
 
         window.socket.on('log.event', payload => {
           try {
+            console.log('received log.event', payload);
             // Update sync status with last-received time
             try { updateSyncStatus('active', new Date().toLocaleTimeString()); } catch(e) {}
             // Always use the server-sent canonical message. The server normalizes
@@ -2183,6 +2283,14 @@ window.addEventListener('load', ()=>{
             if (msg) ST_addLog(payload.type || 'info', msg, { noDb: true, timestamp: payload.ts ? new Date(payload.ts).toLocaleString() : undefined });
           } catch(e) {}
         });
+
+          // Periodically update sync UI based on socket connectivity (handles auto-reconnect)
+          setInterval(() => {
+            try {
+              if (window.socket && window.socket.connected) updateSyncStatus('connected');
+              else updateSyncStatus('disconnected');
+            } catch(e) {}
+          }, 1500);
 
       } catch(e) { console.warn('socket init failed', e); }
     };
@@ -2222,8 +2330,12 @@ window.addEventListener('load', ()=>{
 
   async function pollServerLogs() {
     try {
-      const activeTab = document.querySelector('.nav-item.active')?.dataset.tab;
-      if (activeTab !== 'notifications') return; // only poll when notifications visible
+      // Always poll server logs in background so admin receives entries even when
+      // Notifications tab is not active (ensures sync when no realtime server).
+      // Previously we only polled while Notifications tab was visible which caused
+      // missed updates when actions came from other devices but no socket server.
+      // const activeTab = document.querySelector('.nav-item.active')?.dataset.tab;
+      // if (activeTab !== 'notifications') return; // only poll when notifications visible
       const resp = await fetch(window.location.pathname + '?api=logs&since_id=' + encodeURIComponent(lastLogId));
       if (!resp.ok) return;
       const data = await resp.json();

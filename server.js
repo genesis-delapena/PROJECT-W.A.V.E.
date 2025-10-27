@@ -29,11 +29,29 @@ io.on('connection', (socket) => {
     const parts = authToken.split('::');
     if (parts.length < 4) { socket.disconnect(true); return; }
     const [hmac, user, role, tsClient] = parts;
-    const serverHmac = crypto.createHmac('sha256', SOCKET_SECRET).update(user + '|' + role + '|' + String(Math.floor(Date.now() / 1000))).digest('hex');
-    // allow slight clock skew by accepting serverHmac or previous-second hmac
-    const serverHmacPrev = crypto.createHmac('sha256', SOCKET_SECRET).update(user + '|' + role + '|' + String(Math.floor(Date.now() / 1000) - 1)).digest('hex');
-    if (hmac !== serverHmac && hmac !== serverHmacPrev) {
-      console.warn('invalid token for', user, 'role', role, 'from', socket.id);
+    // Allow a small clock skew window when validating the HMAC token. PHP may
+    // have generated the token a few seconds before the client connected, and
+    // small clock differences between machines can cause verification to fail.
+    const nowSec = Math.floor(Date.now() / 1000);
+    let tokenOk = false;
+    const maxSkewSeconds = 5; // accept tokens signed within the last N seconds
+    for (let s = 0; s <= maxSkewSeconds; s++) {
+      const candidate = crypto.createHmac('sha256', SOCKET_SECRET).update(user + '|' + role + '|' + String(nowSec - s)).digest('hex');
+      if (hmac === candidate) { tokenOk = true; break; }
+    }
+    if (!tokenOk) {
+      console.warn('invalid token for', user, 'role', role, 'from', socket.id, '(possible clock skew or mismatched secret)');
+      // Optional debug output: enable by setting DEBUG_SOCKET_TOKENS=1 in the Node environment
+      try {
+        if (process.env.DEBUG_SOCKET_TOKENS === '1') {
+          console.log('DEBUG_SOCKET_TOKENS: received auth token:', authToken);
+          console.log('DEBUG_SOCKET_TOKENS: parsed parts:', { hmac, user, role, tsClient });
+          // compute expected hmac for the client-supplied ts (if numeric)
+          const expectedClient = crypto.createHmac('sha256', SOCKET_SECRET).update(user + '|' + role + '|' + String(tsClient)).digest('hex');
+          console.log('DEBUG_SOCKET_TOKENS: expected hmac for client ts:', expectedClient);
+          console.log('DEBUG_SOCKET_TOKENS: server nowSec:', nowSec, 'client ts:', tsClient, 'diff:', (Number(nowSec) - Number(tsClient || 0)));
+        }
+      } catch (dbgErr) { /* ignore debug logging errors */ }
       socket.emit('auth.error', { msg: 'invalid token' });
       socket.disconnect(true);
       return;
@@ -82,9 +100,30 @@ io.on('connection', (socket) => {
 
       // Broadcast a single normalized log.event (includes role and username) so all clients show the authoritative message
       try {
-        io.emit('log.event', { type: 'action', message: desc, user: user, role: role, ts: payload.ts, origin: (payload.origin || 'socket') });
+        const evt = { type: 'action', message: desc, user: user, role: role, ts: payload.ts, origin: (payload.origin || 'socket') };
+        console.log(new Date().toISOString(), 'broadcasting log.event', evt);
+        io.emit('log.event', evt);
       } catch (err) { /* non-fatal */ }
     } catch (e) { console.warn('sensor.change handler error', e); }
+  });
+
+  // presence announcements from clients (so clients can show 'active' status)
+  socket.on('presence', payload => {
+    try {
+      console.log(new Date().toISOString(), 'presence from', socket.id, payload);
+      // broadcast to other clients so they can update their UI
+      socket.broadcast.emit('presence', payload);
+    } catch (e) { console.warn('presence handler error', e); }
+  });
+
+  // state announcement: clients may announce their current local state on connect
+  // so other clients can immediately adopt it (useful when joining without a full refresh)
+  socket.on('announce.state', payload => {
+    try {
+      console.log(new Date().toISOString(), 'state announcement from', socket.id, payload && payload.user);
+      // Broadcast to other clients so they can update UI/state without a refresh
+      socket.broadcast.emit('state.announce', payload);
+    } catch (e) { console.warn('announce.state handler error', e); }
   });
 
   // vessel change
@@ -142,7 +181,8 @@ io.on('connection', (socket) => {
       }
 
       // Broadcast the cleaned log event to all clients (including originator)
-      io.emit('log.event', payload);
+  console.log(new Date().toISOString(), 'broadcasting log.event', payload);
+  io.emit('log.event', payload);
 
       // forward to PHP for DB logging
       try {

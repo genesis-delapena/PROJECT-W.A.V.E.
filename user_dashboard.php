@@ -1,4 +1,3 @@
-
 <?php
 // Use a separate session name for user dashboard to avoid replacing admin session data
 session_name('WAVE_USER');
@@ -27,9 +26,62 @@ $current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'water';
 <link href="https://fonts.googleapis.com/css2?family=Righteous&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="icon" type="image/png" href="wave_logo2.png">
-<link rel="stylesheet" href="ad_dashboard.css">
+<link rel="stylesheet" href="user_dashboard.css">
 <!-- Admin styles: rely primarily on ad_dashboard.css; keep only minimal page-specific overrides to enforce layout and glassy containers -->
 <style>
+  /* Copy admin header and left-navigation glassmorphism styles for visual parity */
+  .header {
+    max-width: 100vw;
+    max-height: 100vh;
+    overflow: hidden !important;
+    box-sizing: border-box;
+    background: rgba(255,255,255,0.12);
+    border-radius: 32px;
+    box-shadow: 0 8px 32px rgba(30,81,98,0.18);
+    backdrop-filter: blur(24px) saturate(180%) brightness(1.12);
+    -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.12);
+    border: 1.5px solid rgba(255,255,255,0.18);
+  color: #000;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center; /* center header content like admin */
+  }
+  /* ensure header-left is centered inside the header bar */
+  .header-left { display:flex; align-items:center; gap:20px; margin: 0 auto; }
+  .header .system-title { color: #000 !important; font-weight: 800; font-size: 32px; text-transform: uppercase; letter-spacing: 2px; margin-left: 8px; }
+  .header .admin-title img { filter: none !important; }
+  .main-navigation {
+    max-width: 100vw;
+    max-height: 100vh;
+    overflow: hidden !important;
+    box-sizing: border-box;
+    background: rgba(255,255,255,0.12);
+    border-radius: 32px;
+    box-shadow: 0 8px 32px rgba(30,81,98,0.18);
+    backdrop-filter: blur(24px) saturate(180%) brightness(1.12);
+    -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.12);
+    border: 1.5px solid rgba(255,255,255,0.18);
+    color: #fff;
+    position: fixed;
+  top: 90px;
+    left: 0;
+    bottom: 18px; /* leave a small inset from bottom to match admin rounded container */
+    width: 240px; /* match main content margin and external CSS */
+    z-index: 999;
+  }
+
+  /* Page background image to match admin */
+  body {
+    background: url('wavebg.jpeg') no-repeat center center fixed;
+    background-size: cover;
+  }
+
   /* Page layout & background (use admin background image) */
     html, body { height: auto; width: 100%; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
 
@@ -41,8 +93,8 @@ $current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'water';
     /* Use admin sizing to match header/nav spacing exactly (ad_dashboard.css defines the visuals) */
   .main-navigation { width: 240px; }
   .main-content {
-    margin-left: 240px;
-    margin-top: 90px;
+  margin-left: 240px;
+  margin-top: 90px; /* align with header height */
     padding: 22px 28px;
     /* Enforce admin main white card visual to avoid accidental transparency */
     background: #fff !important;
@@ -50,7 +102,7 @@ $current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'water';
     border-bottom-left-radius: 32px;
     box-shadow: none !important;
     width: calc(100vw - 240px);
-    min-height: calc(100vh - 90px);
+  min-height: calc(100vh - 90px);
   }
 
   /* Monitoring cards — mirror admin compact layout for exact parity */
@@ -71,6 +123,10 @@ $current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'water';
 
   /* Small helper adjustments (pills, badges) */
   .st-pill { background: linear-gradient(180deg,#49d7ff,#1aa6ff) !important; border-radius: 9999px !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px rgba(0,0,0,.08) !important; color:#083344 !important; border:1px solid rgba(255,255,255,.35); }
+  /* position dropdown menu to top-right of header like admin */
+  .header-right { position: absolute; right: 20px; top: 18px; }
+  .admin-dropdown { color: #ffffffff !important; }
+  .dropdown-content { right: 0; top: 100%; }
   .badge-hint { display:inline-block; margin-left:8px; padding:2px 8px; font-size:0.75rem; color:#0f5132; background:#d1e7dd; border-radius:9999px; }
 </style>
 
@@ -160,6 +216,13 @@ function toggleDropdown() {
   document.getElementById('dropdownMenu').classList.toggle('dropdown-show');
 }
 function performLogout() {
+  try {
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('log.event', { type: 'info', message: 'logged out', ts: Date.now(), origin: 'local' });
+      setTimeout(() => { window.location.href = 'waveout.php'; }, 250);
+      return;
+    }
+  } catch(e) {}
   setTimeout(() => { window.location.href = 'waveout.php'; }, 200);
 }
 </script>
@@ -182,23 +245,17 @@ function performLogout() {
       <div class="water-grid">
         <div class="big-card sensor-card" onclick="switchChart('WQI')">
           <h3>Water Quality Index</h3>
-          <p id="wqiValue">--</p>
+          <p id="wqiValue" name="wqi_value">--</p>
         </div>
         <div class="right-grid">
-          <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen</h3><p id="do">--</p></div>
-          <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity</h3><p id="turbidity">--</p></div>
-          <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia</h3><p id="ammonia">--</p></div>
+          <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p></div>
+          <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3><p id="turbidity">--</p></div>
+          <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p></div>
           <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div>
-          <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Temperature</h3><p id="temperature">--</p></div>
+          <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3><p id="temperature">--</p></div>
         </div>
       </div>
-      <div class="card wide chart-container">
-        <h3 id="chartTitle">WQI Live Chart</h3>
-        <canvas id="liveChart" height="140"></canvas>
-      </div>
-      <div style="margin-top:10px;color:#555;font-size:0.95rem;">
-        <span id="lastUpdatedLabel">Last updated: <em id="lastUpdatedValue">--</em></span>
-      </div>
+      <!-- Live chart removed on user dashboard to maximize sensor cards -->
     </div>
   </div>
 
@@ -216,58 +273,14 @@ function performLogout() {
           <option value="access">Access</option>
           <option value="alarm">Alarm</option>
         </select>
-        <button class="st-btn st-export st-pill" onclick="openExportPdfModal()">Export PDF</button>
-      </div>
-
-      <!-- Export PDF Modal (admin styles) -->
-      <div id="exportPdfModal">
-        <div class="modal-content">
-          <h3>Export Notification Logs</h3>
-          <div class="modal-row">
-            <label for="modalExportCategory">Event:</label>
-            <select id="modalExportCategory">
-              <option value="all">All</option>
-              <option value="action">Action</option>
-              <option value="alert">Alert</option>
-              <option value="info">Info</option>
-              <option value="access">Access</option>
-              <option value="alarm">Alarm</option>
-            </select>
-          </div>
-          <div class="modal-row">
-            <label for="modalExportFrom">From:</label>
-            <input type="datetime-local" id="modalExportFrom">
-          </div>
-          <div class="modal-row">
-            <label for="modalExportTo">To:</label>
-            <input type="datetime-local" id="modalExportTo">
-          </div>
-          <div class="modal-actions">
-            <button id="modalExportCancel">Cancel</button>
-            <button id="modalExportConfirm">Export PDF</button>
-          </div>
-        </div>
       </div>
 
       <style>
-        /* Admin-like search/filter and modal styles (kept scoped) */
+        /* Admin-like search/filter styles (kept scoped) */
         .notif-searchbar { padding: 8px 14px; border-radius: 8px; border: 1.5px solid #d0d7de; min-width: 180px; font-size: 1rem; background: #f8fafc; transition: border-color .15s, box-shadow .15s; outline: none; margin-right: 10px; box-shadow: 0 1px 4px #1e516208; }
         .notif-searchbar:focus { border-color: #1e5162; background: #fff; box-shadow: 0 2px 8px #1e516222; }
         .notif-category-filter { padding: 8px 12px; border-radius: 8px; border: 1.5px solid #d0d7de; font-size: 1rem; background: #f8fafc; transition: border-color .15s, box-shadow .15s; outline: none; margin-right: 10px; box-shadow: 0 1px 4px #1e516208; cursor: pointer; }
         .notif-category-filter:focus { border-color: #1e5162; background: #fff; box-shadow: 0 2px 8px #1e516222; }
-        #exportPdfModal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.25); align-items: center; justify-content: center; }
-        #exportPdfModal.active { display: flex; }
-        #exportPdfModal .modal-content { background: #fff; padding: 2.2rem 2.2rem 1.5rem 2.2rem; border-radius: 16px; min-width: 320px; max-width: 95vw; box-shadow: 0 4px 32px #0002; font-family: 'Segoe UI', Arial, sans-serif; }
-        #exportPdfModal h3 { margin-top: 0; margin-bottom: 1.2rem; color: #1e5162; font-size: 1.35rem; font-weight: 700; }
-        #exportPdfModal label { font-weight: 600; color: #1e5162; margin-right: 8px; font-size: 1rem; }
-        #exportPdfModal select, #exportPdfModal input[type="datetime-local"] { padding: 8px 12px; border-radius: 7px; border: 1px solid #d0d7de; font-size: 1rem; margin-bottom: 0.2em; margin-top: 0.2em; }
-        #exportPdfModal .modal-row { display: flex; align-items: center; margin-bottom: 1.1rem; }
-        #exportPdfModal .modal-row label { min-width: 60px; }
-        #exportPdfModal .modal-actions { text-align: right; margin-top: 0.5em; }
-        #modalExportCancel { margin-right: 1em; background: #fff; color: #1e5162; border: 1px solid #1e5162; padding: 0.5em 1.2em; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background .15s; }
-        #modalExportCancel:hover { background: #f0f4f8; }
-        #modalExportConfirm { background: #1e5162; color: #fff; border: none; padding: 0.5em 1.2em; border-radius: 6px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px #1e516222; transition: background .15s; }
-        #modalExportConfirm:hover { background: #1976d2; }
       </style>
 
         <div style="overflow-x:auto;">
@@ -317,15 +330,24 @@ function performLogout() {
   </div>
 
   <script>
-  function openExportPdfModal() { document.getElementById('exportPdfModal').classList.add('active'); }
-  document.getElementById('modalExportCancel').onclick = function() { document.getElementById('exportPdfModal').classList.remove('active'); }
-  document.getElementById('modalExportConfirm').onclick = function() {
-    let cat = document.getElementById('modalExportCategory').value || 'all';
-    if (cat.toLowerCase() === 'access') cat = 'access';
-    const from = document.getElementById('modalExportFrom').value;
-    const to = document.getElementById('modalExportTo').value;
-    document.getElementById('exportPdfModal').classList.remove('active');
-    ST_exportLogsPDF(cat, from, to);
+  // Live filter for notification logs (user dashboard)
+  function filterNotificationLogs() {
+    const search = document.getElementById('notifSearch').value.toLowerCase();
+    let cat = document.getElementById('notifCategoryFilter').value;
+    const table = document.getElementById('st-logTable');
+    if (!table) return;
+    const rows = table.getElementsByTagName('tr');
+    for (let i = 1; i < rows.length; i++) { // skip header
+      const cells = rows[i].getElementsByTagName('td');
+      if (cells.length < 3) continue;
+      const msg = cells[1].textContent.toLowerCase();
+      let event = cells[2].textContent.toLowerCase();
+      // Treat 'login' as 'access' for filtering
+      if (event === 'login') event = 'access';
+      const catMatch = (cat === 'all') || (event === cat);
+      const searchMatch = !search || msg.includes(search) || event.includes(search) || cells[0].textContent.toLowerCase().includes(search);
+      rows[i].style.display = (catMatch && searchMatch) ? '' : 'none';
+    }
   }
   </script>
 
@@ -389,8 +411,8 @@ function performLogout() {
   /* icon bubble exact admin style */
   #systemSection .st-icon { display:inline-flex !important; align-items:center !important; justify-content:center !important; width:52px !important; height:52px !important; border-radius:12px !important; background: linear-gradient(180deg,#49d7ff,#1aa6ff) !important; color:#fff !important; font-size:20px !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 10px rgba(0,0,0,.25) !important; margin-bottom: 10px !important; position:relative !important; }
 
-    /* dot and glow (copy admin exact rules) */
-    #systemSection .st-dot { display:inline-block !important; width:12px !important; height:12px !important; border-radius:50% !important; margin-right:6px !important; background:#bbb !important; vertical-align:middle !important; }
+  /* dot and glow (hidden on user dashboard because switches already indicate status) */
+  #systemSection .st-dot { display:none !important; width:12px !important; height:12px !important; border-radius:50% !important; margin-right:6px !important; background:#bbb !important; vertical-align:middle !important; }
     #systemSection .st-on  { background:#06d6a0 !important; box-shadow:0 0 12px #06d6a0 !important; }
     #systemSection .st-off { background:#e63946 !important; box-shadow:0 0 6px #e63946 !important; }
 
@@ -489,8 +511,6 @@ function performLogout() {
     <hr style="margin:20px 0; border:1px solid #e5e7eb;">
   </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 <script>
 /* --- Notification Functions --- */
 function classifyLog(type, message) {
@@ -502,7 +522,8 @@ function classifyLog(type, message) {
   return 'action';
 }
 
-function ST_addLog(type, message){
+function ST_addLog(type, message, opts){
+  opts = opts || {};
   const box = document.getElementById("st-logBox");
   if (!box) return;
   try {
@@ -514,7 +535,7 @@ function ST_addLog(type, message){
     message = msg.trim();
   } catch (e) {}
   const tr = document.createElement("tr");
-  const timestamp = new Date().toLocaleString();
+  const timestamp = (opts.timestamp) ? opts.timestamp : new Date().toLocaleString();
   const category = classifyLog(type, message);
   tr.className = `st-log-entry cat-${category}`;
   tr.dataset.category = category;
@@ -533,33 +554,28 @@ function ST_addLog(type, message){
   box.prepend(tr);
   ST_saveLogs();
 
-  // send to server (optional) - reuse admin endpoint
-  try {
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", 'ad_dashboard.php', true);
-    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-    // Send admin-compatible payload while preserving USER origin. Include role and timestamp for parity.
-    var payload = [];
-    payload.push('log_to_event_log=1');
-    payload.push('user=' + encodeURIComponent("<?php echo addslashes($_SESSION['username']); ?>"));
-    payload.push('role=' + encodeURIComponent('USER'));
-    payload.push('ts=' + encodeURIComponent(Date.now()));
-    payload.push('desc=' + encodeURIComponent(message));
-    payload.push('status=' + encodeURIComponent(type.toUpperCase()));
-    xhr.send(payload.join('&'));
-  } catch(e) { console.error('Log send error', e); }
+  // send to server (optional) - reuse admin endpoint unless caller asked us not to
+  if (!opts.noDb) {
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", 'ad_dashboard.php', true);
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      // Send admin-compatible payload while preserving USER origin. Include role and timestamp for parity.
+      var payload = [];
+      payload.push('log_to_event_log=1');
+      payload.push('user=' + encodeURIComponent("<?php echo addslashes($_SESSION['username']); ?>"));
+      payload.push('role=' + encodeURIComponent('USER'));
+      payload.push('ts=' + encodeURIComponent(Date.now()));
+      payload.push('desc=' + encodeURIComponent(message));
+      payload.push('status=' + encodeURIComponent(type.toUpperCase()));
+      xhr.send(payload.join('&'));
+    } catch(e) { console.error('Log send error', e); }
+  }
 
-  // Broadcast this user log to other tabs (admin) via localStorage so admin dashboard can listen
-  try {
-    localStorage.setItem('wave_user_log_event', JSON.stringify({ type: type, message: message, ts: Date.now() }));
-  } catch (e) { /* ignore storage errors (e.g., private mode) */ }
-
-  // Also emit via realtime socket if available
-  try {
-    if (window.socket && window.socket.connected) {
-      window.socket.emit('log.event', { type: type, message: message, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now() });
-    }
-  } catch(e) { console.warn('socket emit log.event failed', e); }
+  // Do not auto-emit socket 'log.event' here. The realtime server builds and broadcasts
+  // canonical log.events for UI; emitting from clients caused duplication and inconsistent
+  // role/user tags (double 'by'). Only specialized flows should emit explicit socket events
+  // like 'sensor.change' / 'vessel.change' / 'sensors.bulk'.
 }
 
 function ST_saveLogs(){
@@ -575,15 +591,37 @@ function ST_saveLogs(){
   });
   localStorage.setItem("systemLogs", JSON.stringify(logs));
 }
-
 function ST_loadLogs(){
   const box = document.getElementById("st-logBox");
   if (!box) return;
   box.innerHTML = '';
-  const logs = JSON.parse(localStorage.getItem("systemLogs") || "[]");
+  let logs = JSON.parse(localStorage.getItem("systemLogs") || "[]");
+  // Sort logs newest first (descending timestamp) so latest entries show on top
+  logs.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
+  if (logs.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 3;
+    td.style.textAlign = "center";
+    td.style.background = "#e0e0e0";
+    td.style.color = "#555";
+    td.style.fontFamily = "monospace";
+    td.style.fontSize = "1.2em";
+    td.style.padding = "32px 0";
+    td.textContent = "No notifications logs yet.";
+    tr.appendChild(td);
+    box.appendChild(tr);
+    return;
+  }
   logs.forEach(log=>{
     const tr = document.createElement('tr');
-    const category = log.category || classifyLog('info', log.message || '');
+    let category = log.category || classifyLog('info', log.message || '');
+    // Normalize 'login' to 'access' for consistent display and filtering
+    if (category === 'login') category = 'access';
     tr.className = `st-log-entry cat-${category}`;
     tr.dataset.category = category;
     const tdTime = document.createElement('td'); tdTime.className='timestamp'; tdTime.textContent = log.timestamp || '';
@@ -596,29 +634,29 @@ function ST_loadLogs(){
 
 function ST_clearLogs(){ localStorage.removeItem('systemLogs'); const box=document.getElementById('st-logBox'); if(box) box.innerHTML=''; }
 
-function ST_confirmClearLogs(){
-  Swal.fire({ title:'Clear Logs?', text:'This will permanently delete all logs.', icon:'warning', showCancelButton:true, confirmButtonColor:'#ffb703', cancelButtonColor:'#aaa', confirmButtonText:'Yes, clear' }).then((r)=>{ if (r.isConfirmed) { ST_clearLogs(); Swal.fire('Cleared!','All logs have been deleted.','success'); } });
-}
-
-function ST_exportLogsPDF(){
-  const logs = JSON.parse(localStorage.getItem("systemLogs") || "[]");
-  if (logs.length === 0) { Swal.fire("No Logs","There are no logs to export.","info"); return; }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFontSize(16); doc.text("System Logs Report", 14, 20); doc.setFontSize(12); doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
-  const tableData = logs.map(l => [l.timestamp, l.message]);
-  doc.autoTable({ head: [['Timestamp','Message']], body: tableData, startY:35, styles:{fontSize:10, cellPadding:3}, headStyles:{fillColor:[0,119,182]} });
-  doc.save("system_logs.pdf");
-}
+function ST_confirmClearLogs(){ Swal.fire({ title:'Clear Logs?', text:'This will permanently delete all logs.', icon:'warning', showCancelButton:true, confirmButtonColor:'#ffb703', cancelButtonColor:'#aaa', confirmButtonText:'Yes, clear' }).then((r)=>{ if (r.isConfirmed) { ST_clearLogs(); Swal.fire('Cleared!','All logs have been deleted.','success'); } }); }
 
 window.addEventListener('load', ST_loadLogs);
 
-// If we landed here after login with ?log=login create a login event (this will also broadcast to admin via localStorage)
-window.addEventListener('load', function(){
+    // If we landed here after login with ?log=login create a login event (this will also broadcast to admin via realtime)
+    window.addEventListener('load', function(){
   try {
+    // helper: wait for socket connect then emit, otherwise fallback
+    function emitWhenSocketReady(evName, payload, timeoutMs, fallback) {
+      timeoutMs = timeoutMs || 2000;
+      const start = Date.now();
+      (function tryEmit(){
+        try { if (window.socket && window.socket.connected) { window.socket.emit(evName, payload); return; } } catch(e){}
+        if (Date.now() - start < timeoutMs) { setTimeout(tryEmit, 100); return; }
+        try { if (typeof fallback === 'function') fallback(); } catch(e){}
+      })();
+    }
+    function createSyncStatus(){ if (document.getElementById('st-syncStatus')) return; const el=document.createElement('div'); el.id='st-syncStatus'; el.style.position='fixed'; el.style.top='86px'; el.style.right='18px'; el.style.zIndex='9999'; el.style.background='rgba(255,255,255,0.95)'; el.style.border='1px solid #ddd'; el.style.padding='6px 10px'; el.style.borderRadius='18px'; el.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'; el.style.fontSize='13px'; el.style.color='#222'; el.innerHTML='<span id="st-syncDot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:#ccc;vertical-align:middle"></span><span id="st-syncText">Sync: offline</span><span id="st-syncTime" style="margin-left:8px;color:#666;font-size:11px"></span>'; document.body.appendChild(el); }
+    function updateSyncStatus(state, info){ const dot=document.getElementById('st-syncDot'); const text=document.getElementById('st-syncText'); const time=document.getElementById('st-syncTime'); if(!dot||!text) return; if(state==='connected'){ dot.style.background='#2ecc71'; text.textContent='Sync: connected'; } else if(state==='disconnected'){ dot.style.background='#e74c3c'; text.textContent='Sync: disconnected'; } else if(state==='active'){ dot.style.background='#f39c12'; text.textContent='Sync: active'; } else { dot.style.background='#95a5a6'; text.textContent='Sync: offline'; } if(time) time.textContent = info ? ('last: '+info) : ''; }
     const params = new URLSearchParams(window.location.search);
     if (params.get('log') === 'login') {
-      ST_addLog('info', `[USER] <?php echo addslashes($_SESSION['username']); ?> logged in`);
+      createSyncStatus();
+      emitWhenSocketReady('log.event', { type: 'info', message: 'logged in', ts: Date.now(), origin: 'local' }, 2000, function(){ ST_addLog('info', `[USER] <?php echo addslashes($_SESSION['username']); ?> logged in`); });
       params.delete('log');
       const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
       window.history.replaceState({}, '', newUrl);
@@ -662,7 +700,7 @@ function rebootSystem(){
   Swal.fire({title:'Reboot', text:'Perform soft reboot now?', icon:'warning', showCancelButton:true, confirmButtonText:'Reboot', confirmButtonColor:'#ffb703'}).then(r=>{ if(r.isConfirmed){ ST_addLog('action','User initiated system reboot'); Swal.fire('Rebooting','System reboot simulated.','success'); } });
 }
     // Additional System Tools JS helpers (copied from admin)
-    function ST_setVesselState(state) {
+  function ST_setVesselState(state, emit=true) {
       const statusEl = document.getElementById('st-vesselStatus');
       const powerBtn = document.getElementById('st-powerBtn');
       const sensorSwitches = document.querySelectorAll('.st-switch input[type="checkbox"]');
@@ -680,7 +718,8 @@ function rebootSystem(){
       }
       localStorage.setItem('vesselState', state);
       try {
-        if (window.socket && window.socket.connected) {
+        // Only emit vessel.change when this call is the local initiator (emit=true)
+        if (emit && window.socket && window.socket.connected) {
           window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now(), origin: 'local' });
         }
       } catch(e) {}
@@ -698,7 +737,7 @@ function rebootSystem(){
         }).then((res)=>{
           if (res.isConfirmed) {
             ST_setVesselState('OFF');
-            ST_addLog('alert','Vessel shutdown initiated by User');
+            // Server will emit the canonical shutdown log.event
             const rs = document.getElementById('st-rebootStatus');
             if (rs) rs.textContent = 'Shutting down vessel...';
             setTimeout(()=>{ const rs2 = document.getElementById('st-rebootStatus'); if (rs2) rs2.textContent = 'Vessel is now powered off.'; },3000);
@@ -714,7 +753,7 @@ function rebootSystem(){
         }).then((res)=>{
           if (res.isConfirmed) {
             ST_setVesselState('ON');
-            ST_addLog('alert','Vessel powered ON by User');
+            // Server will emit the canonical power-on log.event
             const rs = document.getElementById('st-rebootStatus');
             if (rs) rs.textContent = 'Vessel powering on...';
             setTimeout(()=>{ const rs2 = document.getElementById('st-rebootStatus'); if (rs2) rs2.textContent = 'Vessel is now running.'; },3000);
@@ -732,10 +771,10 @@ function rebootSystem(){
         if (sw) sw.checked = state;
         if (dot) dot.className = 'st-dot ' + (state ? 'st-on' : 'st-off');
       });
-      ST_addLog('action', `All sensors turned ${state ? 'ON' : 'OFF'}`);
+  // Do not locally log bulk sensor toggles; server will emit a canonical `log.event`.
       try {
         if (window.socket && window.socket.connected) {
-          window.socket.emit('sensors.bulk', { keys: ST_SENSOR_KEYS, value: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now() });
+          window.socket.emit('sensors.bulk', { keys: ST_SENSOR_KEYS, value: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now(), origin: 'local' });
         }
       } catch(e) {}
     }
@@ -773,10 +812,11 @@ function rebootSystem(){
           const dot = document.getElementById('st-dot-' + sensor);
           const isOn = !!input.checked;
           if (dot) dot.className = 'st-dot ' + (isOn ? 'st-on' : 'st-off');
-          try { localStorage.setItem('st-sensor-' + sensor, isOn ? '1' : '0'); } catch(e) {}
-          // Create a USER log and broadcast to admin tabs
-          ST_addLog('action', `[USER] ${sensor.toUpperCase()} sensor turned ${isOn ? 'ON' : 'OFF'}`);
+      try { localStorage.setItem('st-sensor-' + sensor, isOn ? '1' : '0'); } catch(e) {}
+      // Do not create a local log here. The server will emit a canonical `log.event`
+      // with the role and "by <username>" suffix for consistent display.
         };
+        // emit with origin will be performed by the outer wrapper to avoid double-emitting
 
         // Initialize vessel state (default OFF for safety). ST_setVesselState also stores in localStorage.
         var vs = localStorage.getItem('vesselState');
@@ -797,14 +837,32 @@ function rebootSystem(){
       script.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
       script.onload = function() {
         try {
-          // Build token from server-signed HMAC and attach current timestamp on the client side
+          // Build token from server-signed HMAC and include the server-side timestamp used
           const socketAuth = (function(){
-            // inline pre-signed hmac (server computed)
-            const presigned = '<?php echo hash_hmac("sha256", $_SESSION['username'] . "|USER|" . time(), WAVE_SOCKET_SECRET); ?>';
-            return presigned + '::' + '<?php echo addslashes($_SESSION['username']); ?>' + '::USER::' + Date.now();
+            // inline pre-signed hmac (server computed) using a single timestamp
+            <?php $__socket_ts = time(); $__socket_hmac = hash_hmac('sha256', $_SESSION['username'] . "|USER|" . $__socket_ts, WAVE_SOCKET_SECRET); ?>
+            const ts = <?php echo $__socket_ts; ?>;
+            return '<?php echo $__socket_hmac; ?>::' + '<?php echo addslashes($_SESSION['username']); ?>' + '::USER::' + ts;
           })();
           window.socket = io(SOCKET_HOST, { transports: ['websocket'], auth: { token: socketAuth } });
-          window.socket.on('connect', () => console.log('socket connected', window.socket.id));
+          window.socket.on('connect', () => { console.log('socket connected', window.socket.id); try { updateSyncStatus('connected', '<?php echo addslashes($_SESSION['username']); ?>'); } catch(e){} });
+          window.socket.on('disconnect', () => { try { updateSyncStatus('disconnected'); } catch(e){} });
+          // Announce presence and current local state on connect so other clients sync immediately
+          window.socket.on('connect', () => {
+            try {
+              const me = '<?php echo addslashes($_SESSION['username']); ?>';
+              // emit presence (short ping)
+              window.socket.emit('presence', { user: me, ts: Date.now(), origin: 'user' });
+              // build sensors snapshot
+              const sensors = {};
+              (window.ST_SENSOR_KEYS || ['ph','turb','temp','ammo','do','load1','load2','ultra']).forEach(k => {
+                try { sensors[k] = (localStorage.getItem('st-sensor-' + k) === '1'); } catch(e) { sensors[k] = false; }
+              });
+              const payload = { user: me, ts: Date.now(), origin: 'user', vesselState: localStorage.getItem('vesselState') || 'OFF', sensors: sensors };
+              window.socket.emit('announce.state', payload);
+              try { updateSyncStatus('active', me + ' @ ' + new Date().toLocaleTimeString()); } catch(e) {}
+            } catch(e) {}
+          });
 
           const __WAVE_USER = '<?php echo addslashes($_SESSION['username']); ?>';
           // When another client changes a sensor, update UI and localStorage
@@ -817,21 +875,51 @@ function rebootSystem(){
               if (sw) sw.checked = isOn;
               if (dot) dot.className = 'st-dot ' + (isOn ? 'st-on' : 'st-off');
               try { localStorage.setItem('st-sensor-' + key, isOn ? '1' : '0'); } catch(e) {}
-              if (!(payload.origin === 'local' && payload.user === __WAVE_USER)) {
-                ST_addLog('info', `${payload.user || 'remote'} set ${key.toUpperCase()} ${isOn ? 'ON' : 'OFF'}`);
-              }
+              // UI-only update: logging will be handled by server-emitted `log.event` to avoid duplicates
             } catch(e){}
           });
 
           window.socket.on('vessel.change', payload => {
             try {
-              ST_setVesselState(payload.state);
+              // Apply remote change but do NOT re-emit (prevent loops)
+              ST_setVesselState(payload.state, false);
               try { localStorage.setItem('vesselState', payload.state); } catch(e){}
-              if (!(payload.origin === 'local' && payload.user === __WAVE_USER)) {
-                ST_addLog('info', `vessel state changed to ${payload.state} by ${payload.user || 'remote'}`);
-              }
+              // No direct logging here; server will emit a single log.event with a cleaned message
             } catch(e){}
           });
+
+              // Apply incoming announced states from other clients
+              window.socket.on('state.announce', payload => {
+                try {
+                  const me = '<?php echo addslashes($_SESSION['username']); ?>';
+                  if (!payload || payload.user === me) return;
+                  if (payload.sensors && typeof payload.sensors === 'object') {
+                    Object.keys(payload.sensors).forEach(k => {
+                      try {
+                        const isOn = !!payload.sensors[k];
+                        const sw = document.getElementById('st-sw-' + k);
+                        const dot = document.getElementById('st-dot-' + k);
+                        if (sw) sw.checked = isOn;
+                        if (dot) dot.className = 'st-dot ' + (isOn ? 'st-on' : 'st-off');
+                        try { localStorage.setItem('st-sensor-' + k, isOn ? '1' : '0'); } catch(e) {}
+                      } catch(e) {}
+                    });
+                  }
+                  if (payload.vesselState) {
+                    try { ST_setVesselState(String(payload.vesselState || 'OFF'), false); localStorage.setItem('vesselState', String(payload.vesselState || 'OFF')); } catch(e) {}
+                  }
+                  try { updateSyncStatus('active', payload.user + ' @ ' + new Date(payload.ts || Date.now()).toLocaleTimeString()); } catch(e) {}
+                } catch(e) {}
+              });
+
+              // Listen for server-emitted cleaned log events and display them.
+              window.socket.on('log.event', payload => {
+                try {
+                  try { updateSyncStatus('active', new Date().toLocaleTimeString()); } catch(e){}
+                  const msg = String(payload.message || payload.desc || '').trim();
+                  if (msg) ST_addLog(payload.type || 'info', msg, { noDb: true, timestamp: payload.ts ? new Date(payload.ts).toLocaleString() : undefined });
+                } catch(e) {}
+              });
 
         } catch(e) { console.warn('socket init failed', e); }
       };
@@ -845,21 +933,16 @@ function rebootSystem(){
       try {
         const isOn = !!input.checked;
         if (window.socket && window.socket.connected) {
-          window.socket.emit('sensor.change', { key: sensor, value: isOn, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now() });
+          window.socket.emit('sensor.change', { key: sensor, value: isOn, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now(), origin: 'local' });
         }
       } catch(e){}
     };
 
     const origST_togglePower = window.ST_togglePower;
     window.ST_togglePower = function() {
-      // call original which already updates local state and logs
+      // call original which already updates local state and emits via ST_setVesselState when confirmed
       origST_togglePower();
-      try {
-        const state = localStorage.getItem('vesselState') || 'OFF';
-        if (window.socket && window.socket.connected) {
-          window.socket.emit('vessel.change', { state: state, user: '<?php echo addslashes($_SESSION['username']); ?>', role: 'USER', ts: Date.now() });
-        }
-      } catch(e){}
+      // Do NOT emit here — ST_setVesselState handles emission after user confirms via SweetAlert.
     };
 
 // Listen for storage events from other tabs (admin/user) and sync UI
@@ -879,8 +962,7 @@ window.addEventListener('storage', function(e) {
     if (e.key === 'vesselState') {
       const state = e.newValue || 'OFF';
       ST_setVesselState(state);
-      // Push a small info log to indicate remote change
-  ST_addLog('info', `vessel state changed to ${state} (remote)`);
+      // Do not create a storage-based "remote" log; server will emit canonical log.event
     }
   } catch (err) { /* ignore */ }
 });
