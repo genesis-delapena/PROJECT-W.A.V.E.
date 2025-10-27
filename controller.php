@@ -346,6 +346,9 @@ if (isset($_SESSION["LAR_level"])) {
         <p id="phDisplay" name="ph_sensor">pH Level: --</p>
         <p id="tempDisplay" name="temperature_sensor">Temperature (°C): --</p>
 
+        <!-- Raw/extra sensor list (populated dynamically) -->
+        <div id="rawSensors" style="margin-top:10px;font-size:12px;color:#cbd5e1;">&nbsp;</div>
+
       </div>
       <div class="extra-box">
         <h2>Battery Percentage</h2>
@@ -398,11 +401,11 @@ if (isset($_SESSION["LAR_level"])) {
 
   <!-- Fixed Status Bar -->
   <div class="status-bar">
-    <div class="status-item"><div>WIFI</div>--</div>
-    <div class="status-item"><div>GPS</div>--</div>
+    <div class="status-item" id="wifiStatus"><div>WIFI</div>--</div>
+    <div class="status-item" id="gpsStatus"><div>GPS</div>--</div>
   <div class="status-item" id="caTemp"><div>CA TEMP</div>--</div>
-    <div class="status-item"><div>SPEED</div>--</div>
-    <div class="status-item"><div>WATCHDOG</div>--</div>
+    <div class="status-item" id="speedStatus"><div>SPEED</div>--</div>
+    <div class="status-item" id="watchdogStatus"><div>WATCHDOG</div>--</div>
   </div>
 
   <!-- Redesigned Ocean/Glassmorphism Back Button -->
@@ -718,6 +721,101 @@ if (ticksG && labelsG && headingReadout && boat) {
         window.addEventListener('pointerup', stopHelm);
         window.addEventListener('pointercancel', stopHelm);
         // keyboard controls for helm and telegraph
+  // Client-side preserve token: when the UI sends a control (lever/helm),
+  // hold the five status values (WIFI, GPS, CA TEMP, SPEED, WATCHDOG)
+  // so they don't flicker or get replaced while the user is interacting.
+  let preserveUntil = 0; // timestamp (ms) until which polling should not overwrite status items
+  let preservedValues = {};
+
+  // lastKnown stores the last-received value per logical key so we don't clear a field
+  // when a later RPi message omits that key. Keys are canonical strings like 'lat','lon','wqi','ca_temp', etc.
+  const lastKnown = {};
+
+  // Persist lastKnown across page reloads so UI values survive refreshes
+  const LAST_KNOWN_KEY = 'wave_lastKnown_v1';
+  function loadLastKnownFromStorage() {
+    try {
+      const raw = localStorage.getItem(LAST_KNOWN_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        Object.assign(lastKnown, parsed);
+      }
+    } catch (e) { /* ignore malformed storage */ }
+  }
+  function saveLastKnownToStorage() {
+    try {
+      localStorage.setItem(LAST_KNOWN_KEY, JSON.stringify(lastKnown));
+    } catch (e) { /* ignore quota errors */ }
+  }
+
+  // Render UI from lastKnown values immediately (so refresh keeps previous values visible)
+  function renderFromLastKnown() {
+    try {
+      // Sensors
+      if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`;
+      if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`;
+      if (typeof lastKnown.turbidity !== 'undefined') document.getElementById('turbidityDisplay').textContent = `Turbidity: ${lastKnown.turbidity}`;
+      if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`;
+      if (typeof lastKnown.ph !== 'undefined') document.getElementById('phDisplay').textContent = `pH Level: ${lastKnown.ph}`;
+      if (typeof lastKnown.temp !== 'undefined') document.getElementById('tempDisplay').textContent = `Temperature (°C): ${lastKnown.temp}`;
+      if (typeof lastKnown.battery !== 'undefined') document.getElementById('batteryDisplay').textContent = `${lastKnown.battery}`;
+
+      // CA TEMP card
+      const caTempEl = document.getElementById('caTemp');
+      if (caTempEl && typeof lastKnown.ca_temp !== 'undefined') {
+        const v = parseFloat(lastKnown.ca_temp);
+        if (!Number.isNaN(v)) caTempEl.innerHTML = `<div>CA TEMP</div>${v.toFixed(1)}°C`;
+      }
+
+      // Status bar
+      const wifiEl = document.getElementById('wifiStatus');
+      if (wifiEl) {
+        const r = lastKnown.rssi !== undefined ? `${lastKnown.rssi} dBm` : '';
+        const q = lastKnown.wifiq !== undefined ? `${lastKnown.wifiq}` : '';
+        if (r || q) wifiEl.innerHTML = `<div>WIFI</div>${(r + ' ' + q).trim()}`;
+      }
+      const gpsEl = document.getElementById('gpsStatus');
+      if (gpsEl) {
+        // Prefer numeric lat/lon from lastKnown and show on two lines.
+        const latVal = (typeof lastKnown.lat !== 'undefined') ? parseFloat(lastKnown.lat) : NaN;
+        const lonVal = (typeof lastKnown.lon !== 'undefined') ? parseFloat(lastKnown.lon) : NaN;
+        if (!Number.isNaN(latVal) && !Number.isNaN(lonVal)) {
+          gpsEl.innerHTML = `<div>GPS</div><div>LAT: ${latVal.toFixed(6)}</div><div>LON: ${lonVal.toFixed(6)}</div>`;
+        } else if (!Number.isNaN(latVal)) {
+          gpsEl.innerHTML = `<div>GPS</div><div>LAT: ${latVal.toFixed(6)}</div><div>LON: --</div>`;
+        } else if (!Number.isNaN(lonVal)) {
+          gpsEl.innerHTML = `<div>GPS</div><div>LAT: --</div><div>LON: ${lonVal.toFixed(6)}</div>`;
+        } else if (lastKnown.gps_status) {
+          // If no coords but a textual GPS status is present, show it (but strip long parenthetical noise)
+          const gs = String(lastKnown.gps_status).replace(/\(.*\)/, '').trim();
+          gpsEl.innerHTML = `<div>GPS</div>${gs}`;
+        } else {
+          gpsEl.innerHTML = `<div>GPS</div>--`;
+        }
+      }
+      const speedEl = document.getElementById('speedStatus');
+      if (speedEl) {
+        if (typeof lastKnown.speed_kmh !== 'undefined') speedEl.innerHTML = `<div>SPEED</div>${parseFloat(lastKnown.speed_kmh).toFixed(2)} km/h`;
+        else if (typeof lastKnown.speed_kn !== 'undefined') speedEl.innerHTML = `<div>SPEED</div>${(parseFloat(lastKnown.speed_kn) * 1.852).toFixed(2)} km/h`;
+      }
+      const wdEl = document.getElementById('watchdogStatus');
+      if (wdEl && typeof lastKnown.watchdog !== 'undefined') {
+        const parsed = Date.parse(lastKnown.watchdog);
+        if (!Number.isNaN(parsed)) {
+          const diffSec = Math.floor((Date.now() - parsed) / 1000);
+          let display = '';
+          if (diffSec < 60) display = `${diffSec}s ago`;
+          else if (diffSec < 3600) display = `${Math.floor(diffSec/60)}m ago`;
+          else display = `${Math.floor(diffSec/3600)}h ago`;
+          wdEl.innerHTML = `<div>WATCHDOG</div><span title="${lastKnown.watchdog}">OK (${display})</span>`;
+        } else {
+          wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
+        }
+      }
+    } catch (e) { /* non-fatal */ }
+  }
+
         // Helper: send a PC-originated message to Flask server (/send_from_pc)
         const FLASK_CANDIDATES = [
           'http://192.168.0.2:5000',
@@ -726,6 +824,20 @@ if (ticksG && labelsG && headingReadout && boat) {
         ];
 
         async function sendPcMessage(msg) {
+          // When sending a control message, activate the preserve token for a short time
+          try {
+            const now = Date.now();
+            const holdMs = 5000; // keep values for 5s while control in progress
+            preserveUntil = now + holdMs;
+            // snapshot current visible values so we can restore if poll overwrites
+            preservedValues = {
+              wifi: (document.getElementById('wifiStatus') || {innerHTML:''}).innerHTML,
+              gps: (document.getElementById('gpsStatus') || {innerHTML:''}).innerHTML,
+              caTemp: (document.getElementById('caTemp') || {innerHTML:''}).innerHTML,
+              speed: (document.getElementById('speedStatus') || {innerHTML:''}).innerHTML,
+              watchdog: (document.getElementById('watchdogStatus') || {innerHTML:''}).innerHTML
+            };
+          } catch (e) { /* non-fatal */ }
           // First try same-origin proxy to avoid CORS issues
           try {
             const proxyRes = await fetch('pc_proxy.php', {
@@ -819,34 +931,271 @@ if (ticksG && labelsG && headingReadout && boat) {
                 const res = await fetch('fetch_sensors.php', { cache: 'no-store' });
                 if (!res.ok) throw new Error('fetch failed ' + res.status);
                 const data = await res.json();
-                // data expected: { from: 'rpi'|'pc', message: { IMU_TEMP_C: 34.47, ... } }
-                const msg = data && data.message ? data.message : null;
-                if (msg && (typeof msg.IMU_TEMP_C !== 'undefined')) {
-                  const v = parseFloat(msg.IMU_TEMP_C);
+                // Accept multiple shapes: { from, message }, or { rpi: {...} }, or raw dict
+                let msg = null;
+                if (!data) msg = null;
+                else if (data.message) msg = data.message;
+                else if (data.rpi) msg = data.rpi;
+                else msg = data;
+
+                // Helper to read fields case-insensitively
+                function getField(o, names) {
+                  if (!o) return undefined;
+                  for (const n of names) {
+                    if (typeof o[n] !== 'undefined') return o[n];
+                    const up = n.toUpperCase();
+                    for (const k of Object.keys(o)) {
+                      if (k.toUpperCase() === up) return o[k];
+                    }
+                  }
+                  return undefined;
+                }
+
+                // CA temp (IMU_TEMP_C or IMU_TEMP or TEMP)
+                const tval = getField(msg, ['IMU_TEMP_C', 'IMU_TEMP', 'TEMP', 'ca_temp']);
+                if (typeof tval !== 'undefined' && tval !== null && tval !== '') {
+                  lastKnown.ca_temp = tval;
+                  // save update to storage
+                  saveLastKnownToStorage();
+                }
+                // Render CA temp from lastKnown if available
+                if (typeof lastKnown.ca_temp !== 'undefined' && lastKnown.ca_temp !== null && lastKnown.ca_temp !== '') {
+                  const v = parseFloat(lastKnown.ca_temp);
                   if (!Number.isNaN(v)) {
-                    // show one decimal place
                     caTempEl.innerHTML = `<div>CA TEMP</div>${v.toFixed(1)}°C`;
-                    // optional: colorize if hot/cold thresholds
                     if (v >= 60) { caTempEl.style.background = '#7f1d1d'; caTempEl.style.color = '#fff7f7'; }
                     else if (v >= 40) { caTempEl.style.background = '#b45309'; caTempEl.style.color = ''; }
                     else { caTempEl.style.background = ''; caTempEl.style.color = ''; }
-                    return;
+                  } else {
+                    caTempEl.innerHTML = `<div>CA TEMP</div>--`;
+                    caTempEl.style.background = '';
+                    caTempEl.style.color = '';
                   }
                 }
-                // fallback display when data missing
-                caTempEl.innerHTML = `<div>CA TEMP</div>--`;
-                caTempEl.style.background = '';
-                caTempEl.style.color = '';
+
+                // Update other sensor cards if available
+                const wqi = getField(msg, ['WQI', 'wqi']);
+                const doV = getField(msg, ['DO', 'do', 'DISSOLVED_OXYGEN']);
+                const turb = getField(msg, ['TURB', 'TURBIDITY', 'turbidity']);
+                const ammo = getField(msg, ['AMMO', 'AMMONIA', 'ammonia']);
+                const ph = getField(msg, ['PH', 'pH']);
+                const temp = getField(msg, ['TEMP', 'temperature']);
+                const batt = getField(msg, ['BATTERY', 'battery', 'BATT']);
+
+                try { if (typeof wqi !== 'undefined') { lastKnown.wqi = wqi; saveLastKnownToStorage(); } } catch(e){}
+                try { if (typeof doV !== 'undefined') { lastKnown.do = doV; saveLastKnownToStorage(); } } catch(e){}
+                try { if (typeof turb !== 'undefined') { lastKnown.turbidity = turb; saveLastKnownToStorage(); } } catch(e){}
+                try { if (typeof ammo !== 'undefined') { lastKnown.ammonia = ammo; saveLastKnownToStorage(); } } catch(e){}
+                try { if (typeof ph !== 'undefined') { lastKnown.ph = ph; saveLastKnownToStorage(); } } catch(e){}
+                try { if (typeof temp !== 'undefined') { lastKnown.temp = temp; saveLastKnownToStorage(); } } catch(e){}
+                try { if (typeof batt !== 'undefined') { lastKnown.battery = batt; saveLastKnownToStorage(); } } catch(e){}
+
+                // Render sensor displays from lastKnown so values persist even if a message omits a field
+                try { if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`; } catch(e){}
+                try { if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`; } catch(e){}
+                try { if (typeof lastKnown.turbidity !== 'undefined') document.getElementById('turbidityDisplay').textContent = `Turbidity: ${lastKnown.turbidity}`; } catch(e){}
+                try { if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`; } catch(e){}
+                try { if (typeof lastKnown.ph !== 'undefined') document.getElementById('phDisplay').textContent = `pH Level: ${lastKnown.ph}`; } catch(e){}
+                try { if (typeof lastKnown.temp !== 'undefined') document.getElementById('tempDisplay').textContent = `Temperature (°C): ${lastKnown.temp}`; } catch(e){}
+                try { if (typeof lastKnown.battery !== 'undefined') document.getElementById('batteryDisplay').textContent = `${lastKnown.battery}`; } catch(e){}
+
+                // We intentionally DO NOT populate debug/raw keys inside the SENSORS card.
+                // The sensors card should only show the canonical water-quality sensors.
+                try {
+                  const rawEl = document.getElementById('rawSensors');
+                  if (rawEl) rawEl.innerHTML = '&nbsp;';
+                } catch (e) { /* ignore */ }
+
+                // --- Update status bar items (WIFI, GPS, SPEED, WATCHDOG)
+                const rssi = getField(msg, ['RSSI_DBM', 'RSSI', 'rssi_dbm']);
+                const wifiq = getField(msg, ['WIFI_QUALITY', 'WIFI_QUAL', 'wifi_quality']);
+                const lat = getField(msg, ['LAT', 'lat']);
+                const lon = getField(msg, ['LON', 'lon']);
+                const speedKmh = getField(msg, ['SPEED_KMH', 'SPEED_KM_H', 'speed_kmh']);
+                const speedKn = getField(msg, ['SPEED_KNOTS', 'SPEED_KNOT', 'speed_knots']);
+                const gpsStatus = getField(msg, ['STATUS', 'GPS_STATUS', 'status']);
+                const watchdog = getField(msg, ['WATCHDOG', 'watchdog', 'last_updated']);
+
+                // Update lastKnown status values only when new values are present
+                if (typeof rssi !== 'undefined') { lastKnown.rssi = rssi; saveLastKnownToStorage(); }
+                if (typeof wifiq !== 'undefined') { lastKnown.wifiq = wifiq; saveLastKnownToStorage(); }
+                if (typeof lat !== 'undefined') { lastKnown.lat = lat; saveLastKnownToStorage(); }
+                if (typeof lon !== 'undefined') { lastKnown.lon = lon; saveLastKnownToStorage(); }
+                if (typeof speedKmh !== 'undefined') { lastKnown.speed_kmh = speedKmh; saveLastKnownToStorage(); }
+                if (typeof speedKn !== 'undefined') { lastKnown.speed_kn = speedKn; saveLastKnownToStorage(); }
+                if (typeof gpsStatus !== 'undefined') { lastKnown.gps_status = gpsStatus; saveLastKnownToStorage(); }
+                if (typeof watchdog !== 'undefined') { lastKnown.watchdog = watchdog; saveLastKnownToStorage(); }
+
+                // WIFI display: show RSSI and quality where available. Prefer live values, else fall back to lastKnown.
+                try {
+                  const wifiEl = document.getElementById('wifiStatus');
+                  if (wifiEl) {
+                    // respect preserve token if active
+                    if (typeof preserveUntil !== 'undefined' && Date.now() <= preserveUntil && preservedValues && preservedValues.wifi) {
+                      wifiEl.innerHTML = preservedValues.wifi;
+                    } else if (typeof rssi !== 'undefined' || typeof wifiq !== 'undefined' || typeof lastKnown.rssi !== 'undefined' || typeof lastKnown.wifiq !== 'undefined') {
+                      const r = (typeof rssi !== 'undefined') ? rssi : lastKnown.rssi;
+                      const q = (typeof wifiq !== 'undefined') ? wifiq : lastKnown.wifiq;
+                      const rTxt = (typeof r !== 'undefined') ? `${r} dBm` : '';
+                      const qTxt = (typeof q !== 'undefined') ? `${q}` : '';
+                      wifiEl.innerHTML = `<div>WIFI</div>${(rTxt + ' ' + qTxt).trim()}`;
+                    } else {
+                      wifiEl.innerHTML = `<div>WIFI</div>--`;
+                    }
+                  }
+                } catch(e){}
+
+                // GPS display: lat,lon and status. Use lastKnown if current message omits lat/lon.
+                try {
+                  const gpsEl = document.getElementById('gpsStatus');
+                  if (gpsEl) {
+                    if (typeof preserveUntil !== 'undefined' && Date.now() <= preserveUntil && preservedValues && preservedValues.gps) {
+                      gpsEl.innerHTML = preservedValues.gps;
+                    } else if ((typeof lat !== 'undefined' && typeof lon !== 'undefined') || (typeof lastKnown.lat !== 'undefined' && typeof lastKnown.lon !== 'undefined')) {
+                      const useLat = (typeof lat !== 'undefined') ? parseFloat(lat) : (typeof lastKnown.lat !== 'undefined' ? parseFloat(lastKnown.lat) : NaN);
+                      const useLon = (typeof lon !== 'undefined') ? parseFloat(lon) : (typeof lastKnown.lon !== 'undefined' ? parseFloat(lastKnown.lon) : NaN);
+                      if (!Number.isNaN(useLat) && !Number.isNaN(useLon)) {
+                        gpsEl.innerHTML = `<div>GPS</div><div>LAT: ${useLat.toFixed(6)}</div><div>LON: ${useLon.toFixed(6)}</div>`;
+                      } else if (!Number.isNaN(useLat)) {
+                        gpsEl.innerHTML = `<div>GPS</div><div>LAT: ${useLat.toFixed(6)}</div><div>LON: --</div>`;
+                      } else if (!Number.isNaN(useLon)) {
+                        gpsEl.innerHTML = `<div>GPS</div><div>LAT: --</div><div>LON: ${useLon.toFixed(6)}</div>`;
+                      } else {
+                        gpsEl.innerHTML = `<div>GPS</div>--`;
+                      }
+                    } else if (gpsStatus || lastKnown.gps_status) {
+                      const gs = gpsStatus ? String(gpsStatus).replace(/\(.*\)/,'').trim() : String(lastKnown.gps_status).replace(/\(.*\)/,'').trim();
+                      gpsEl.innerHTML = `<div>GPS</div>${gs}`;
+                    } else {
+                      gpsEl.innerHTML = `<div>GPS</div>--`;
+                    }
+                  }
+                } catch(e){}
+
+                // SPEED display: prefer km/h, else convert from knots. Fall back to lastKnown when missing.
+                try {
+                  const speedEl = document.getElementById('speedStatus');
+                  if (speedEl) {
+                    if (typeof preserveUntil !== 'undefined' && Date.now() <= preserveUntil && preservedValues && preservedValues.speed) {
+                      speedEl.innerHTML = preservedValues.speed;
+                    } else {
+                      // choose live value if present, otherwise use lastKnown
+                      const useKmh = (typeof speedKmh !== 'undefined' && speedKmh !== null && speedKmh !== '') ? speedKmh : lastKnown.speed_kmh;
+                      const useKn = (typeof speedKn !== 'undefined' && speedKn !== null && speedKn !== '') ? speedKn : lastKnown.speed_kn;
+                      let display = '--';
+                      if (typeof useKmh !== 'undefined' && useKmh !== null && useKmh !== '') {
+                        display = `${parseFloat(useKmh).toFixed(2)} km/h`;
+                      } else if (typeof useKn !== 'undefined' && useKn !== null && useKn !== '') {
+                        const kmh = parseFloat(useKn) * 1.852;
+                        if (!Number.isNaN(kmh)) display = `${kmh.toFixed(2)} km/h`;
+                      }
+                      speedEl.innerHTML = `<div>SPEED</div>${display}`;
+                    }
+                  }
+                } catch(e){}
+
+                // WATCHDOG display: show OK or ALERT plus relative time. If an ALERT (e.g. WAVE Tampered / WATCHDOG_TAMPER)
+                // appears in the message, show ALERT. Otherwise show OK and the last-updated time.
+                const wdEl = document.getElementById('watchdogStatus');
+                if (wdEl) {
+                  if (typeof preserveUntil !== 'undefined' && Date.now() <= preserveUntil && preservedValues && preservedValues.watchdog) {
+                    wdEl.innerHTML = preservedValues.watchdog;
+                  } else {
+                      // Detect ALERT conditions in current message or lastKnown using tolerant lookup
+                      const alertVal = (typeof getField === 'function') ? getField(msg, ['ALERT','alert']) : (msg && (msg.ALERT || msg.alert));
+                      const unitVal = (typeof getField === 'function') ? getField(msg, ['UNIT_ID','unit_id','UNITID']) : (msg && (msg.UNIT_ID || msg.unit_id || msg.UNITID));
+                      const lastAlert = lastKnown.alert;
+                      const lastUnit = lastKnown.unit_id || lastKnown.UNIT_ID;
+                      let effectiveAlert = (typeof alertVal !== 'undefined') ? alertVal : lastAlert;
+                      let effectiveUnit = (typeof unitVal !== 'undefined') ? unitVal : lastUnit;
+
+                      const wdVal = (typeof watchdog !== 'undefined' && watchdog !== null && watchdog !== '') ? watchdog : lastKnown.watchdog;
+
+
+                      // First check for explicit reset/clear messages (e.g. "Tamper Reset") which should clear ALERT state
+                      const infoVal = (typeof getField === 'function') ? getField(msg, ['INFO','info','MESSAGE','message']) : (msg && (msg.INFO || msg.info || msg.MESSAGE || msg.message));
+                      const infoUpper = (typeof infoVal !== 'undefined' && infoVal !== null) ? String(infoVal).toUpperCase() : '';
+
+                      // If the message explicitly contains a reset/clear instruction (e.g. "Tamper Reset"),
+                      // clear any persisted ALERT and immediately show OK.
+                      if (infoUpper.match(/RESET|CLEAR|RESTORE/)) {
+                        console.log('[WATCHDOG] reset/clear detected in INFO:', infoVal);
+                        try { delete lastKnown.alert; delete lastKnown.unit_id; saveLastKnownToStorage(); } catch(e){}
+                        // also clear any effective alert we might have pulled from lastKnown so we immediately show OK
+                        try { effectiveAlert = undefined; effectiveUnit = undefined; } catch (e) {}
+                        wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
+                        wdEl.style.background = '';
+                        wdEl.style.color = '';
+                      } else {
+                        // Determine if this is an ALERT case (look for words like WAVE or TAMPER in alert/unit values)
+                        let isAlert = false;
+                        let alertReason = '';
+                        try {
+                          if (typeof effectiveAlert !== 'undefined' && effectiveAlert !== null && String(effectiveAlert).toUpperCase().match(/WAVE|TAMPER/)) {
+                            isAlert = true; alertReason = String(effectiveAlert);
+                          }
+                          if (!isAlert && typeof effectiveUnit !== 'undefined' && String(effectiveUnit).toUpperCase().match(/WATCHDOG|TAMPER/)) {
+                            isAlert = true; alertReason = String(effectiveUnit);
+                          }
+                        } catch (e) { /* ignore */ }
+
+                        // Persist seen alert/unit for short-term stability
+                        if (isAlert) { lastKnown.alert = effectiveAlert; lastKnown.unit_id = effectiveUnit; saveLastKnownToStorage(); }
+
+                        if (isAlert) {
+                          // Show ALERT prominently
+                          const reason = alertReason ? ` ${alertReason}` : '';
+                          wdEl.innerHTML = `<div>WATCHDOG</div><strong style="color:#fff">ALERT</strong>${reason}`;
+                          wdEl.style.background = '#7f1d1d'; wdEl.style.color = '#fff7f7';
+                        } else if (typeof wdVal !== 'undefined' && wdVal !== null && wdVal !== '') {
+                        const parsed = Date.parse(wdVal);
+                        if (!Number.isNaN(parsed)) {
+                          const diffSec = Math.floor((Date.now() - parsed) / 1000);
+                          let display = '';
+                          if (diffSec < 0) display = 'just now';
+                          else if (diffSec < 60) display = `${diffSec}s ago`;
+                          else if (diffSec < 3600) display = `${Math.floor(diffSec/60)}m ago`;
+                          else display = `${Math.floor(diffSec/3600)}h ago`;
+                          wdEl.innerHTML = `<div>WATCHDOG</div><span title="${wdVal}">OK (${display})</span>`;
+                          // keep visual hint for staleness but still label OK
+                          if (diffSec > 30) { wdEl.style.background = '#b45309'; wdEl.style.color = '#fff7f7'; }
+                          else { wdEl.style.background = ''; wdEl.style.color = ''; }
+                        } else {
+                          wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
+                          wdEl.style.background = '';
+                          wdEl.style.color = '';
+                        }
+                      } else {
+                        // No timestamp and no alert -> show OK (default state)
+                        wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
+                        wdEl.style.background = '';
+                        wdEl.style.color = '';
+                      }
+                    }
+                  }
+                }
+
               } catch (err) {
-                // network or parse error — show offline symbol
+                // network or parse error — show offline/fallback
                 try { caTempEl.innerHTML = `<div>CA TEMP</div>--`; caTempEl.style.background = ''; caTempEl.style.color = ''; } catch(e){}
                 console.debug('CA temp poll error', err);
               }
             }
-            // start polling every 2s
-            setInterval(pollCaTemp, 2000);
-            // run once immediately
-            pollCaTemp().catch(()=>{});
+
+            // Load persisted lastKnown and render immediately so refresh keeps values
+            try {
+              loadLastKnownFromStorage();
+              renderFromLastKnown();
+            } catch (e) { /* ignore */ }
+
+            // start polling every 2s, resiliently (so earlier JS errors don't prevent poller start)
+            try {
+              setInterval(pollCaTemp, 2000);
+              // run once immediately
+              pollCaTemp().catch(()=>{});
+            } catch (e) {
+              console.error('Failed to start sensor poller', e);
+            }
           });
       </script>
 </body>

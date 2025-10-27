@@ -37,24 +37,86 @@ def send_from_pc():
 @app.route("/send", methods=["POST"])
 def receive_message():
     global last_message
-    data = request.get_json(force=True) or {}
-    msg = data.get("message", {})
+    # Accept JSON payloads or plain text payloads from RPi terminals
+    import json
+    msg = {}
+    # Try JSON first (no exceptions thrown on bad JSON)
+    data = request.get_json(silent=True)
+    if isinstance(data, dict) and 'message' in data:
+        msg = data.get('message') or {}
+    elif isinstance(data, dict) and data:
+        # If RPi posted a dict directly, treat it as the message
+        msg = data
+    else:
+        # Try raw text body (could be JSON string or key:value pairs)
+        raw = request.get_data(as_text=True).strip()
+        if raw:
+            # Try parse raw as JSON
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    msg = parsed
+                else:
+                    # not a dict -> wrap
+                    msg = {"message": parsed}
+            except Exception:
+                # Try simple key:value; pairs separated by ; , or newline
+                try:
+                    parts = [p.strip() for p in raw.replace('\n', ';').split(';') if p.strip()]
+                    kv = {}
+                    for part in parts:
+                        if ':' in part:
+                            k, v = part.split(':', 1)
+                            kv[k.strip()] = v.strip()
+                        elif '=' in part:
+                            k, v = part.split('=', 1)
+                            kv[k.strip()] = v.strip()
+                    if kv:
+                        msg = kv
+                    else:
+                        # fallback: store raw under 'raw'
+                        msg = {"raw": raw}
+                except Exception:
+                    msg = {"raw": raw}
+
     # update only the rpi slot with the latest sensor dict
-    last_message['rpi'] = msg if isinstance(msg, dict) else {}
-    print("[RPi → PC] Received sensor payload:")
     if isinstance(msg, dict):
-        for k, v in msg.items():
+        # attach a UTC timestamp for frontend watchdog/last-updated display
+        try:
+            from datetime import datetime
+            msg['last_updated'] = datetime.utcnow().isoformat() + 'Z'
+        except Exception:
+            pass
+        last_message['rpi'] = msg
+    else:
+        try:
+            from datetime import datetime
+            last_message['rpi'] = {"message": msg, 'last_updated': datetime.utcnow().isoformat() + 'Z'}
+        except Exception:
+            last_message['rpi'] = {"message": msg}
+
+    print("[RPi → PC] Received sensor payload:")
+    if isinstance(last_message['rpi'], dict):
+        for k, v in last_message['rpi'].items():
             print(f"  - {k}: {v}")
     else:
-        print(f"  - message: {msg}")
-    return jsonify({"status": "ok", "received": last_message})
+        print(f"  - message: {last_message['rpi']}")
+
+    # Return the normalized shape expected by the PHP frontend
+    return jsonify({"status": "ok", "received": last_message, "from": "rpi", "message": last_message.get('rpi', {})})
 
 # PHP dashboard fetches here
 @app.route("/get", methods=["GET"])
 def get_message():
     # Returns both rpi sensors and pc last message
-    # Example: { "rpi": {...sensor dict...}, "pc": "10:AHEAD:100" }
-    return jsonify(last_message)
+    # Return the normalized shape expected by controller.php and fetch_sensors.php
+    # { "from": "rpi", "message": {...sensor dict...}, "pc": "..." }
+    response = {
+        "from": "rpi",
+        "message": last_message.get('rpi', {}),
+        "pc": last_message.get('pc', "")
+    }
+    return jsonify(response)
 
 def console_sender():
     """Optional console thread to send manual messages from PC."""
@@ -66,7 +128,8 @@ def console_sender():
                 print("Shutting down console sender...")
                 break
             if msg:
-                last_message = {"from": "pc", "message": msg}
+                # keep pc slot separate and avoid clobbering rpi dict
+                last_message['pc'] = msg
                 print(f"[PC → RPi] {msg}")
     except Exception:
         pass
