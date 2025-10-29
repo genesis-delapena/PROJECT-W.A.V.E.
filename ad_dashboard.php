@@ -64,6 +64,58 @@ if (!isset($_SESSION["username"])) {
   header("Location: wavelogin.php");
   exit;
 }
+
+// Enforce single active session per account: compare stored token with session token
+try {
+  if (!empty($_SESSION['username'])) {
+    $checkTokenStmt = $conn->prepare("SELECT session_token FROM active_sessions WHERE username=? LIMIT 1");
+    if ($checkTokenStmt) {
+      $checkTokenStmt->bind_param('s', $_SESSION['username']);
+      $checkTokenStmt->execute();
+      $checkTokenStmt->bind_result($dbSessionToken);
+      if ($checkTokenStmt->fetch()) {
+        $checkTokenStmt->close();
+        // If tokens mismatch, destroy this session and force re-login
+        if (empty($_SESSION['session_token']) || !hash_equals($dbSessionToken, $_SESSION['session_token'])) {
+          // Another device logged in. Notify the current client and then logout.
+          $kick_msg = 'someone logged in using this account. you will be automatically log out';
+          // Close session for writing so waveout can destroy it reliably
+          session_write_close();
+          // Render a small interstitial page that notifies the user and then logs out
+          ?><!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Signed Out</title>
+            <style>body{font-family:Segoe UI,Arial,Helvetica,sans-serif;background:#f8fafc;color:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;margin:0} .box{background:#fff;padding:28px;border-radius:12px;box-shadow:0 8px 32px rgba(2,6,23,0.08);max-width:720px;text-align:center} h1{font-size:20px;margin-bottom:8px;color:#072f4a} p{margin:0 0 12px;font-size:16px;color:#0b2233} .count{font-weight:800;color:#0b3b5a}</style>
+          </head>
+          <body>
+            <div class="box">
+              <h1>Signed in elsewhere</h1>
+              <p><?php echo htmlspecialchars($kick_msg); ?></p>
+              <p>You will be redirected to the login page in <span id="sec" class="count">5</span>s.</p>
+              <p><a href="waveout.php">Log out now</a></p>
+            </div>
+            <script>
+              (function(){
+                var s = 5; var el = document.getElementById('sec');
+                var t = setInterval(function(){ s--; if(s<=0){ clearInterval(t); window.location.href='waveout.php'; } el.textContent = s; }, 1000);
+              })();
+            </script>
+          </body>
+          </html><?php
+          exit;
+        }
+      } else {
+        $checkTokenStmt->close();
+      }
+    }
+  }
+} catch (Exception $e) {
+  // Non-fatal: allow access but log for investigation
+  error_log('Session check error (admin): ' . $e->getMessage());
+}
 /* ─────────────────────────────────────────────────────────────────────────────
    OPTIONAL SAME-ORIGIN PROXY API
    - Enables fetch from same origin to avoid CORS.
@@ -1576,18 +1628,38 @@ async function fetchData() {
     const wrapper = await robustFetchJson();
     if (wrapper && typeof wrapper.message === 'object') {
       const s = wrapper.message;
+      // Accept variants for turbidity and temperature (NTU_VALUE, TEMP_C, IMU_TEMP_C)
+      const turbRaw = s.TURB ?? s.turb ?? s.TURBIDITY ?? s.turbidity ?? s.NTU_VALUE ?? s.ntu_value;
+      const tempRaw = s.TEMP ?? s.temp ?? s.TEMP_C ?? s.temp_c ?? s.IMU_TEMP_C ?? s.imu_temp_c;
+
       const data = {
         WQI:  safeNumber(s.WQI  ?? s.wqi),
         PH:   safeNumber(s.PH   ?? s.pH),
-        TURB: safeNumber(s.TURB ?? s.turb),
-        TEMP: safeNumber(s.TEMP ?? s.temp),
+        TURB: safeNumber(turbRaw ?? s.TURB ?? s.turb),
+        TEMP: safeNumber(tempRaw ?? s.TEMP ?? s.temp),
         AMMO: safeNumber(s.AMMO ?? s.ammo),
         DO:   safeNumber(s.DO   ?? s.do)
       };
+
+      // Display formatted numbers when raw values are present; otherwise fall back to numeric-safe values
       document.getElementById("wqiValue").textContent    = data.WQI;
       document.getElementById("ph_level").textContent    = data.PH;
-      document.getElementById("turbidity").textContent   = data.TURB;
-      document.getElementById("temperature").textContent = data.TEMP;
+      const turbEl = document.getElementById("turbidity");
+      if (turbEl) {
+        if (typeof turbRaw !== 'undefined' && turbRaw !== null && String(turbRaw).trim() !== '') {
+          const n = Number(String(turbRaw).trim()); turbEl.textContent = Number.isFinite(n) ? n.toFixed(1) : String(turbRaw);
+        } else {
+          turbEl.textContent = data.TURB;
+        }
+      }
+      const tempEl = document.getElementById("temperature");
+      if (tempEl) {
+        if (typeof tempRaw !== 'undefined' && tempRaw !== null && String(tempRaw).trim() !== '') {
+          const n2 = Number(String(tempRaw).trim()); tempEl.textContent = Number.isFinite(n2) ? n2.toFixed(2) : String(tempRaw);
+        } else {
+          tempEl.textContent = data.TEMP;
+        }
+      }
       document.getElementById("ammonia").textContent     = data.AMMO;
       document.getElementById("do").textContent          = data.DO;
       const raw = s.last_updated || s.updated || Date.now();
@@ -2370,6 +2442,50 @@ window.addEventListener('load', ()=>{
   // Poll every 3 seconds while on Notifications tab
   setInterval(pollServerLogs, 3000);
 });
+</script>
+<!-- Periodic session validation to auto-show kick message when another device logs in -->
+<script>
+(function(){
+  var sessionPollInterval = null;
+  var kicked = false;
+  function showKick(message){
+    if (kicked) return; kicked = true;
+    try {
+      var overlay = document.createElement('div');
+      overlay.id = 'kickOverlayAdmin';
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.background = 'rgba(0,0,0,0.6)';
+      overlay.style.display = 'flex';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.zIndex = 99999;
+      overlay.innerHTML = '<div style="background:#fff;padding:24px;border-radius:12px;max-width:720px;text-align:center;">'
+        + '<h1 style="font-size:20px;margin:0 0 8px;color:#072f4a">Signed in elsewhere</h1>'
+        + '<p style="margin:0 0 12px;font-size:16px;color:#0b2233">'+(message||'someone logged in using this account. you will be automatically log out')+'</p>'
+        + '<p>You will be redirected to the login page in <span id="kickSecAdmin" style="font-weight:800;color:#0b3b5a">5</span>s.</p>'
+        + '<p><a href="waveout.php">Log out now</a></p></div>';
+      document.body.appendChild(overlay);
+      var s = 5;
+      var t = setInterval(function(){ s--; var el = document.getElementById('kickSecAdmin'); if (el) el.textContent = s; if (s<=0){ clearInterval(t); window.location.href='waveout.php'; } }, 1000);
+      if (sessionPollInterval) clearInterval(sessionPollInterval);
+    } catch(e) { window.location.href = 'waveout.php'; }
+  }
+
+  async function checkSessionOnce(){
+    try {
+      var res = await fetch('session_check.php', { credentials: 'same-origin', cache: 'no-store' });
+      if (!res.ok) return;
+      var j = await res.json();
+      if (j && j.valid === false) {
+        showKick(j.message || 'someone logged in using this account. you will be automatically log out');
+      }
+    } catch(e) {}
+  }
+
+  sessionPollInterval = setInterval(checkSessionOnce, 3000);
+  checkSessionOnce();
+})();
 </script>
 </body>
 </html>

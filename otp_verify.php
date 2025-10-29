@@ -112,6 +112,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["verify"])) {
     session_regenerate_id(true);
     $_SESSION["username"]  = $user;
     $_SESSION["LAR_level"] = $level;
+    // Generate a strong per-session token and persist it to DB to enforce single active session.
+    try {
+      if (empty($_SESSION['session_token'])) {
+        $_SESSION['session_token'] = bin2hex(random_bytes(32));
+      }
+      $token = $_SESSION['session_token'];
+      // Ensure the active_sessions table exists (safe to run repeatedly)
+      $createSql = "CREATE TABLE IF NOT EXISTS active_sessions (
+        username VARCHAR(100) NOT NULL PRIMARY KEY,
+        session_token VARCHAR(128) NOT NULL,
+        last_seen DATETIME NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+      $conn->query($createSql);
+
+      $upsert = $conn->prepare("INSERT INTO active_sessions (username, session_token, last_seen) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE session_token=VALUES(session_token), last_seen=NOW()");
+      if ($upsert) {
+        $upsert->bind_param('ss', $user, $token);
+        $upsert->execute();
+        $upsert->close();
+      }
+    } catch (Exception $e) {
+      // Non-fatal: allow login to continue but log error server-side
+      error_log('Session token persist error: ' . $e->getMessage());
+    }
     // remove any temporary pending values if present in this new session
     unset($_SESSION["pending_user"], $_SESSION["pending_level"]);
 

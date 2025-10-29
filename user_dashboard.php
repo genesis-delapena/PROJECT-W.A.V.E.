@@ -14,6 +14,56 @@ if (!isset($_SESSION["username"]) || $_SESSION["LAR_level"] != 1) {
   exit;
 }
 
+// Enforce single active session per account (user): compare DB token with session token
+try {
+  if (!empty($_SESSION['username'])) {
+    $stmtToken = $conn->prepare("SELECT session_token FROM active_sessions WHERE username=? LIMIT 1");
+    if ($stmtToken) {
+      $stmtToken->bind_param('s', $_SESSION['username']);
+      $stmtToken->execute();
+      $stmtToken->bind_result($dbToken);
+      if ($stmtToken->fetch()) {
+        $stmtToken->close();
+        if (empty($_SESSION['session_token']) || !hash_equals($dbToken, $_SESSION['session_token'])) {
+          // Notify the user on this device that another login occurred, then logout
+          $kick_msg = 'someone logged in using this account. you will be automatically log out';
+          session_write_close();
+          ?>
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Signed Out</title>
+            <style>body{font-family:Segoe UI,Arial,Helvetica,sans-serif;background:#f8fafc;color:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;margin:0} .box{background:#fff;padding:28px;border-radius:12px;box-shadow:0 8px 32px rgba(2,6,23,0.08);max-width:720px;text-align:center} h1{font-size:20px;margin-bottom:8px;color:#072f4a} p{margin:0 0 12px;font-size:16px;color:#0b2233} .count{font-weight:800;color:#0b3b5a}</style>
+          </head>
+          <body>
+            <div class="box">
+              <h1>Signed in elsewhere</h1>
+              <p><?php echo htmlspecialchars($kick_msg); ?></p>
+              <p>You will be redirected to the login page in <span id="sec" class="count">5</span>s.</p>
+              <p><a href="waveout.php">Log out now</a></p>
+            </div>
+            <script>
+              (function(){
+                var s = 5; var el = document.getElementById('sec');
+                var t = setInterval(function(){ s--; if(s<=0){ clearInterval(t); window.location.href='waveout.php'; } el.textContent = s; }, 1000);
+              })();
+            </script>
+          </body>
+          </html>
+          <?php
+          exit;
+        }
+      } else {
+        $stmtToken->close();
+      }
+    }
+  }
+} catch (Exception $e) {
+  error_log('Session check error (user): ' . $e->getMessage());
+}
+
 // Default tab
 $current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'water';
 ?>
@@ -106,14 +156,14 @@ $current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'water';
   }
 
   /* Monitoring cards — mirror admin compact layout for exact parity */
-  .water-grid { display: grid; grid-template-columns: 2fr 3fr; gap: 12px; margin-bottom: 8px; }
-  .big-card.sensor-card { min-height: 160px; font-size: 1rem; border-radius: 10px; }
-  .right-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 10px; }
-  /* Make user sensor cards match admin visuals: tighter, smaller height and same blue gradient */
-  .sensor-card { background: linear-gradient(145deg, #a1d4f5, #6ec1e4); border-radius: 12px; box-shadow: 0 6px 12px rgba(0,0,0,0.12); color: #012b45; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 110px; font-size: 0.92rem; padding: 12px 10px; }
+  .water-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; margin-bottom: 8px; height: calc(100% - 12px); min-height: 520px; box-sizing: border-box; }
+  .big-card.sensor-card { min-height: 0; height: 100%; font-size: 1rem; border-radius: 10px; display:flex; align-items:center; justify-content:center; box-sizing: border-box; }
+  .right-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 10px; height: 100%; box-sizing: border-box; }
+  /* Make user sensor cards match admin visuals and scale text to fill cards */
+  .sensor-card { background: linear-gradient(145deg, #a1d4f5, #6ec1e4); border-radius: 12px; box-shadow: 0 6px 12px rgba(0,0,0,0.12); color: #012b45; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; height: 100%; padding: 12px 10px; box-sizing: border-box; }
   .sensor-card.wide { grid-column: span 2; }
-  .sensor-card h3 { margin: 0 0 2px 0; font-size: 0.92rem; font-weight: 700; }
-  .sensor-card p { margin: 0; font-size: 1rem; font-weight: 600; }
+  .sensor-card h3 { margin: 0 0 8px 0; font-size: 1.15rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; }
+  .sensor-card p { margin: 0; font-size: 2rem; font-weight: 900; line-height: 1; }
 
   /* notifications/tools should visually match admin containers (use ad_dashboard.css for full visuals) */
   .notifications-wrap { background: #fff !important; border-radius: 12px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
@@ -241,7 +291,7 @@ function performLogout() {
   <!-- Monitoring Section -->
   <div id="waterSection" class="section" style="<?php echo ($current_tab === 'water') ? '' : 'display:none;'; ?>">
     <div class="water-quality-section">
-      <h2>Monitoring <span id="perfHint" class="badge-hint" style="display:none;">live updates paused</span></h2>
+      <h2> <span id="perfHint" class="badge-hint" style="display:none;">live updates paused</span></h2>
       <div class="water-grid">
         <div class="big-card sensor-card" onclick="switchChart('WQI')">
           <h3>Water Quality Index</h3>
@@ -249,10 +299,16 @@ function performLogout() {
         </div>
         <div class="right-grid">
           <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p></div>
-          <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3><p id="turbidity">--</p></div>
+          <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3>
+            <p id="turbidity">--</p>
+            <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
+          </div>
           <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p></div>
           <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div>
-          <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3><p id="temperature">--</p></div>
+          <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3>
+            <p id="temperature">--</p>
+            <small id="temperature_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
+          </div>
         </div>
       </div>
       <!-- Live chart removed on user dashboard to maximize sensor cards -->
@@ -261,7 +317,7 @@ function performLogout() {
 
   <!-- Notifications Section (match admin exact table layout + styles) -->
   <div id="notificationsSection" class="section notifications-section" style="<?php echo ($current_tab === 'notifications') ? '' : 'display:none;'; ?>">
-    <h2>Notifications Logs</h2>
+    <h2> </h2>
     <div class="notifications-wrap">
       <div class="tool-actions" style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
         <input id="notifSearch" type="text" placeholder="Search logs..." class="notif-searchbar" oninput="filterNotificationLogs()">
@@ -966,6 +1022,153 @@ window.addEventListener('storage', function(e) {
     }
   } catch (err) { /* ignore */ }
 });
+
+// --- Periodic session validation to auto-show kick message when another device logs in ---
+(function(){
+  var sessionPollInterval = null;
+  var kicked = false;
+  function showKick(message){
+    if (kicked) return; kicked = true;
+    try {
+      var overlay = document.createElement('div');
+      overlay.id = 'kickOverlay';
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.background = 'rgba(0,0,0,0.6)';
+      overlay.style.display = 'flex';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.zIndex = 99999;
+      overlay.innerHTML = '<div style="background:#fff;padding:24px;border-radius:12px;max-width:720px;text-align:center;">'
+        + '<h1 style="font-size:20px;margin:0 0 8px;color:#072f4a">Signed in elsewhere</h1>'
+        + '<p style="margin:0 0 12px;font-size:16px;color:#0b2233">'+(message||'someone logged in using this account. you will be automatically log out')+'</p>'
+        + '<p>You will be redirected to the login page in <span id="kickSec" style="font-weight:800;color:#0b3b5a">5</span>s.</p>'
+        + '<p><a href="waveout.php">Log out now</a></p></div>';
+      document.body.appendChild(overlay);
+      var s = 5;
+      var t = setInterval(function(){ s--; var el = document.getElementById('kickSec'); if (el) el.textContent = s; if (s<=0){ clearInterval(t); window.location.href='waveout.php'; } }, 1000);
+      if (sessionPollInterval) clearInterval(sessionPollInterval);
+    } catch(e) { window.location.href = 'waveout.php'; }
+  }
+
+  async function checkSessionOnce(){
+    try {
+      var res = await fetch('session_check.php', { credentials: 'same-origin', cache: 'no-store' });
+      if (!res.ok) return;
+      var j = await res.json();
+      if (j && j.valid === false) {
+        showKick(j.message || 'someone logged in using this account. you will be automatically log out');
+      }
+    } catch(e) {}
+  }
+
+  sessionPollInterval = setInterval(checkSessionOnce, 3000);
+  checkSessionOnce();
+})();
+</script>
+<script>
+// Monitoring poller for user dashboard: keep turbidity and temperature readings + their status in sync
+(() => {
+  const POLL_MS = 2000;
+  let pollTimer = null;
+
+  function getField(o, names) {
+    if (!o) return undefined;
+    for (const n of names) {
+      if (typeof o[n] !== 'undefined') return o[n];
+      const up = n.toUpperCase();
+      for (const k of Object.keys(o)) {
+        if (k.toUpperCase() === up) return o[k];
+      }
+    }
+    return undefined;
+  }
+
+  async function fetchMonitoringSensorsOnce() {
+    try {
+      const active = document.querySelector('.nav-item.active')?.dataset.tab;
+      if (active !== 'water' || document.hidden) return; // only update when Monitoring tab visible
+
+      const res = await fetch('fetch_sensors.php', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      let msg = null;
+      if (!data) msg = null;
+      else if (data.message) msg = data.message;
+      else if (data.rpi) msg = data.rpi;
+      else msg = data;
+
+      // Accept common variants from the server (TEMP, TEMP_C, IMU_TEMP_C, NTU_VALUE, TURB, etc.)
+      const turb = getField(msg, ['NTU_VALUE','NTU','TURB','TURBIDITY','turbidity']);
+      const temp = getField(msg, ['TEMP_C','TEMP','IMU_TEMP_C','temperature']);
+
+      // Helper: format numeric values when possible to 2 decimal places
+      function fmtNum(v, digits = 2) {
+        if (v === null || typeof v === 'undefined' || v === '') return v;
+        // preserve string messages (like 'N/A' or '-')
+        const n = Number(String(v).trim());
+        if (Number.isFinite(n)) return n.toFixed(digits);
+        return String(v);
+      }
+
+      // Status fields (case-insensitive keys, fallback to common variants)
+      const turbStatus = getField(msg, ['NTU_STATUS','TURB_STATUS','TURBIDITY_STATUS','NTU_STATUS_MSG','TURB_STATUS_MSG']);
+      const tempStatus = getField(msg, ['TEMP_STATUS','TEMPERATURE_STATUS','TEMP_STATUS_MSG']);
+
+      if (typeof turb !== 'undefined' && turb !== null) {
+        const el = document.getElementById('turbidity'); if (el) el.textContent = fmtNum(turb, 1);
+      }
+      if (typeof temp !== 'undefined' && temp !== null) {
+        const el = document.getElementById('temperature'); if (el) el.textContent = fmtNum(temp, 2);
+      }
+
+      // Update status text only on Monitoring tab (per request). Empty -> hide subtlely
+      const tStatEl = document.getElementById('turbidity_status');
+      if (tStatEl) {
+        if (typeof turbStatus !== 'undefined' && turbStatus !== null && String(turbStatus).trim() !== '') {
+          tStatEl.textContent = String(turbStatus);
+        } else {
+          tStatEl.textContent = '';
+        }
+      }
+      const tmpStatEl = document.getElementById('temperature_status');
+      if (tmpStatEl) {
+        if (typeof tempStatus !== 'undefined' && tempStatus !== null && String(tempStatus).trim() !== '') {
+          tmpStatEl.textContent = String(tempStatus);
+        } else {
+          tmpStatEl.textContent = '';
+        }
+      }
+
+    } catch (e) {
+      // silent
+    }
+  }
+
+  function startUserMonitoring() {
+    if (pollTimer) return;
+    fetchMonitoringSensorsOnce();
+    pollTimer = setInterval(fetchMonitoringSensorsOnce, POLL_MS);
+  }
+  function stopUserMonitoring() {
+    if (!pollTimer) return; clearInterval(pollTimer); pollTimer = null;
+  }
+
+  // Start when the page loads. If Monitoring isn't active, fetcher will be dormant.
+  document.addEventListener('DOMContentLoaded', startUserMonitoring);
+
+  // Pause when page hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopUserMonitoring(); else startUserMonitoring();
+  });
+  // Also resume/stop when user switches tabs in-app
+  document.addEventListener('click', (e) => {
+    // simple heuristic: if a nav-item was clicked, re-evaluate
+    if (e.target && e.target.closest && e.target.closest('.nav-item')) {
+      setTimeout(() => { const active = document.querySelector('.nav-item.active')?.dataset.tab; if (active === 'water') startUserMonitoring(); else stopUserMonitoring(); }, 120);
+    }
+  }, true);
+})();
 </script>
 </body>
 </html>

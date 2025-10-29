@@ -341,10 +341,12 @@ if (isset($_SESSION["LAR_level"])) {
         <h2>SENSORS</h2>
         <p id="wqiDisplay" name="wqi_value">WQI: --</p>
         <p id="doDisplay" name="dissolve_sensor">DO (mg/L): --</p>
-        <p id="turbidityDisplay" name="turbidity_sensor">Turbidity: --</p>
+  <p id="turbidityDisplay" name="turbidity_sensor">Turbidity: --</p>
+  <p id="turbidity" style="margin-top:4px;font-weight:700;">--</p>
         <p id="ammoniaDisplay" name="ammonia_sensor">Ammonia (mg/L): --</p>
         <p id="phDisplay" name="ph_sensor">pH Level: --</p>
-        <p id="tempDisplay" name="temperature_sensor">Temperature (°C): --</p>
+  <p id="tempDisplay" name="temperature_sensor">Temperature (°C): --</p>
+  <p id="temperature" style="margin-top:4px;font-weight:700;">--</p>
 
         <!-- Raw/extra sensor list (populated dynamically) -->
         <div id="rawSensors" style="margin-top:10px;font-size:12px;color:#cbd5e1;">&nbsp;</div>
@@ -755,10 +757,16 @@ if (ticksG && labelsG && headingReadout && boat) {
       // Sensors
       if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`;
       if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`;
-      if (typeof lastKnown.turbidity !== 'undefined') document.getElementById('turbidityDisplay').textContent = `Turbidity: ${lastKnown.turbidity}`;
+      if (typeof lastKnown.turbidity !== 'undefined') {
+        document.getElementById('turbidityDisplay').textContent = `Turbidity: ${lastKnown.turbidity}`;
+        try { const tEl = document.getElementById('turbidity'); if (tEl) tEl.textContent = lastKnown.turbidity; } catch(e){}
+      }
       if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`;
       if (typeof lastKnown.ph !== 'undefined') document.getElementById('phDisplay').textContent = `pH Level: ${lastKnown.ph}`;
-      if (typeof lastKnown.temp !== 'undefined') document.getElementById('tempDisplay').textContent = `Temperature (°C): ${lastKnown.temp}`;
+      if (typeof lastKnown.temp !== 'undefined') {
+        document.getElementById('tempDisplay').textContent = `Temperature (°C): ${lastKnown.temp}`;
+        try { const tmpEl = document.getElementById('temperature'); if (tmpEl) tmpEl.textContent = lastKnown.temp; } catch(e){}
+      }
       if (typeof lastKnown.battery !== 'undefined') document.getElementById('batteryDisplay').textContent = `${lastKnown.battery}`;
 
       // CA TEMP card
@@ -801,17 +809,8 @@ if (ticksG && labelsG && headingReadout && boat) {
       }
       const wdEl = document.getElementById('watchdogStatus');
       if (wdEl && typeof lastKnown.watchdog !== 'undefined') {
-        const parsed = Date.parse(lastKnown.watchdog);
-        if (!Number.isNaN(parsed)) {
-          const diffSec = Math.floor((Date.now() - parsed) / 1000);
-          let display = '';
-          if (diffSec < 60) display = `${diffSec}s ago`;
-          else if (diffSec < 3600) display = `${Math.floor(diffSec/60)}m ago`;
-          else display = `${Math.floor(diffSec/3600)}h ago`;
-          wdEl.innerHTML = `<div>WATCHDOG</div><span title="${lastKnown.watchdog}">OK (${display})</span>`;
-        } else {
-          wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
-        }
+        // Show a simple OK state only (no relative "time ago" and no color change threshold)
+        wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
       }
     } catch (e) { /* non-fatal */ }
   }
@@ -976,10 +975,10 @@ if (ticksG && labelsG && headingReadout && boat) {
                 // Update other sensor cards if available
                 const wqi = getField(msg, ['WQI', 'wqi']);
                 const doV = getField(msg, ['DO', 'do', 'DISSOLVED_OXYGEN']);
-                const turb = getField(msg, ['TURB', 'TURBIDITY', 'turbidity']);
+                const turb = getField(msg, ['NTU_VALUE','NTU','TURB','TURBIDITY','turbidity']);
                 const ammo = getField(msg, ['AMMO', 'AMMONIA', 'ammonia']);
                 const ph = getField(msg, ['PH', 'pH']);
-                const temp = getField(msg, ['TEMP', 'temperature']);
+                const temp = getField(msg, ['TEMP_C','IMU_TEMP_C','TEMP','temperature']);
                 const batt = getField(msg, ['BATTERY', 'battery', 'BATT']);
 
                 try { if (typeof wqi !== 'undefined') { lastKnown.wqi = wqi; saveLastKnownToStorage(); } } catch(e){}
@@ -993,10 +992,24 @@ if (ticksG && labelsG && headingReadout && boat) {
                 // Render sensor displays from lastKnown so values persist even if a message omits a field
                 try { if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`; } catch(e){}
                 try { if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`; } catch(e){}
-                try { if (typeof lastKnown.turbidity !== 'undefined') document.getElementById('turbidityDisplay').textContent = `Turbidity: ${lastKnown.turbidity}`; } catch(e){}
+                try {
+                  if (typeof lastKnown.turbidity !== 'undefined') {
+                    const tv = parseFloat(lastKnown.turbidity);
+                    const turbText = (Number.isFinite(tv)) ? tv.toFixed(1) : String(lastKnown.turbidity);
+                    document.getElementById('turbidityDisplay').textContent = `Turbidity: ${turbText}`;
+                    try { const tEl = document.getElementById('turbidity'); if (tEl) tEl.textContent = turbText; } catch(e){}
+                  }
+                } catch(e){}
                 try { if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`; } catch(e){}
                 try { if (typeof lastKnown.ph !== 'undefined') document.getElementById('phDisplay').textContent = `pH Level: ${lastKnown.ph}`; } catch(e){}
-                try { if (typeof lastKnown.temp !== 'undefined') document.getElementById('tempDisplay').textContent = `Temperature (°C): ${lastKnown.temp}`; } catch(e){}
+                try {
+                  if (typeof lastKnown.temp !== 'undefined') {
+                    const tv2 = parseFloat(lastKnown.temp);
+                    const tmpText = (Number.isFinite(tv2)) ? tv2.toFixed(2) : String(lastKnown.temp);
+                    document.getElementById('tempDisplay').textContent = `Temperature (°C): ${tmpText}`;
+                    try { const tmpEl = document.getElementById('temperature'); if (tmpEl) tmpEl.textContent = tmpText; } catch(e){}
+                  }
+                } catch(e){}
                 try { if (typeof lastKnown.battery !== 'undefined') document.getElementById('batteryDisplay').textContent = `${lastKnown.battery}`; } catch(e){}
 
                 // We intentionally DO NOT populate debug/raw keys inside the SENSORS card.
@@ -1094,79 +1107,52 @@ if (ticksG && labelsG && headingReadout && boat) {
                   }
                 } catch(e){}
 
-                // WATCHDOG display: show OK or ALERT plus relative time. If an ALERT (e.g. WAVE Tampered / WATCHDOG_TAMPER)
-                // appears in the message, show ALERT. Otherwise show OK and the last-updated time.
+                // WATCHDOG display: show ALERT prominently, otherwise show a simple OK.
+                // Removed relative "time ago" and any staleness color threshold per request.
                 const wdEl = document.getElementById('watchdogStatus');
                 if (wdEl) {
                   if (typeof preserveUntil !== 'undefined' && Date.now() <= preserveUntil && preservedValues && preservedValues.watchdog) {
                     wdEl.innerHTML = preservedValues.watchdog;
                   } else {
-                      // Detect ALERT conditions in current message or lastKnown using tolerant lookup
-                      const alertVal = (typeof getField === 'function') ? getField(msg, ['ALERT','alert']) : (msg && (msg.ALERT || msg.alert));
-                      const unitVal = (typeof getField === 'function') ? getField(msg, ['UNIT_ID','unit_id','UNITID']) : (msg && (msg.UNIT_ID || msg.unit_id || msg.UNITID));
-                      const lastAlert = lastKnown.alert;
-                      const lastUnit = lastKnown.unit_id || lastKnown.UNIT_ID;
-                      let effectiveAlert = (typeof alertVal !== 'undefined') ? alertVal : lastAlert;
-                      let effectiveUnit = (typeof unitVal !== 'undefined') ? unitVal : lastUnit;
+                    // Detect ALERT conditions in current message or lastKnown using tolerant lookup
+                    const alertVal = (typeof getField === 'function') ? getField(msg, ['ALERT','alert']) : (msg && (msg.ALERT || msg.alert));
+                    const unitVal = (typeof getField === 'function') ? getField(msg, ['UNIT_ID','unit_id','UNITID']) : (msg && (msg.UNIT_ID || msg.unit_id || msg.UNITID));
+                    const lastAlert = lastKnown.alert;
+                    const lastUnit = lastKnown.unit_id || lastKnown.UNIT_ID;
+                    let effectiveAlert = (typeof alertVal !== 'undefined') ? alertVal : lastAlert;
+                    let effectiveUnit = (typeof unitVal !== 'undefined') ? unitVal : lastUnit;
 
-                      const wdVal = (typeof watchdog !== 'undefined' && watchdog !== null && watchdog !== '') ? watchdog : lastKnown.watchdog;
+                    const wdVal = (typeof watchdog !== 'undefined' && watchdog !== null && watchdog !== '') ? watchdog : lastKnown.watchdog;
 
+                    // First check for explicit reset/clear messages (e.g. "Tamper Reset") which should clear ALERT state
+                    const infoVal = (typeof getField === 'function') ? getField(msg, ['INFO','info','MESSAGE','message']) : (msg && (msg.INFO || msg.info || msg.MESSAGE || msg.message));
+                    const infoUpper = (typeof infoVal !== 'undefined' && infoVal !== null) ? String(infoVal).toUpperCase() : '';
 
-                      // First check for explicit reset/clear messages (e.g. "Tamper Reset") which should clear ALERT state
-                      const infoVal = (typeof getField === 'function') ? getField(msg, ['INFO','info','MESSAGE','message']) : (msg && (msg.INFO || msg.info || msg.MESSAGE || msg.message));
-                      const infoUpper = (typeof infoVal !== 'undefined' && infoVal !== null) ? String(infoVal).toUpperCase() : '';
-
-                      // If the message explicitly contains a reset/clear instruction (e.g. "Tamper Reset"),
-                      // clear any persisted ALERT and immediately show OK.
-                      if (infoUpper.match(/RESET|CLEAR|RESTORE/)) {
-                        console.log('[WATCHDOG] reset/clear detected in INFO:', infoVal);
-                        try { delete lastKnown.alert; delete lastKnown.unit_id; saveLastKnownToStorage(); } catch(e){}
-                        // also clear any effective alert we might have pulled from lastKnown so we immediately show OK
-                        try { effectiveAlert = undefined; effectiveUnit = undefined; } catch (e) {}
-                        wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
-                        wdEl.style.background = '';
-                        wdEl.style.color = '';
-                      } else {
-                        // Determine if this is an ALERT case (look for words like WAVE or TAMPER in alert/unit values)
-                        let isAlert = false;
-                        let alertReason = '';
-                        try {
-                          if (typeof effectiveAlert !== 'undefined' && effectiveAlert !== null && String(effectiveAlert).toUpperCase().match(/WAVE|TAMPER/)) {
-                            isAlert = true; alertReason = String(effectiveAlert);
-                          }
-                          if (!isAlert && typeof effectiveUnit !== 'undefined' && String(effectiveUnit).toUpperCase().match(/WATCHDOG|TAMPER/)) {
-                            isAlert = true; alertReason = String(effectiveUnit);
-                          }
-                        } catch (e) { /* ignore */ }
-
-                        // Persist seen alert/unit for short-term stability
-                        if (isAlert) { lastKnown.alert = effectiveAlert; lastKnown.unit_id = effectiveUnit; saveLastKnownToStorage(); }
-
-                        if (isAlert) {
-                          // Show ALERT prominently
-                          const reason = alertReason ? ` ${alertReason}` : '';
-                          wdEl.innerHTML = `<div>WATCHDOG</div><strong style="color:#fff">ALERT</strong>${reason}`;
-                          wdEl.style.background = '#7f1d1d'; wdEl.style.color = '#fff7f7';
-                        } else if (typeof wdVal !== 'undefined' && wdVal !== null && wdVal !== '') {
-                        const parsed = Date.parse(wdVal);
-                        if (!Number.isNaN(parsed)) {
-                          const diffSec = Math.floor((Date.now() - parsed) / 1000);
-                          let display = '';
-                          if (diffSec < 0) display = 'just now';
-                          else if (diffSec < 60) display = `${diffSec}s ago`;
-                          else if (diffSec < 3600) display = `${Math.floor(diffSec/60)}m ago`;
-                          else display = `${Math.floor(diffSec/3600)}h ago`;
-                          wdEl.innerHTML = `<div>WATCHDOG</div><span title="${wdVal}">OK (${display})</span>`;
-                          // keep visual hint for staleness but still label OK
-                          if (diffSec > 30) { wdEl.style.background = '#b45309'; wdEl.style.color = '#fff7f7'; }
-                          else { wdEl.style.background = ''; wdEl.style.color = ''; }
-                        } else {
-                          wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
-                          wdEl.style.background = '';
-                          wdEl.style.color = '';
+                    if (infoUpper.match(/RESET|CLEAR|RESTORE/)) {
+                      try { delete lastKnown.alert; delete lastKnown.unit_id; saveLastKnownToStorage(); } catch(e){}
+                      try { effectiveAlert = undefined; effectiveUnit = undefined; } catch (e) {}
+                      wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
+                      wdEl.style.background = '';
+                      wdEl.style.color = '';
+                    } else {
+                      // Determine if this is an ALERT case
+                      let isAlert = false;
+                      let alertReason = '';
+                      try {
+                        if (typeof effectiveAlert !== 'undefined' && effectiveAlert !== null && String(effectiveAlert).toUpperCase().match(/WAVE|TAMPER/)) {
+                          isAlert = true; alertReason = String(effectiveAlert);
                         }
+                        if (!isAlert && typeof effectiveUnit !== 'undefined' && String(effectiveUnit).toUpperCase().match(/WATCHDOG|TAMPER/)) {
+                          isAlert = true; alertReason = String(effectiveUnit);
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      if (isAlert) {
+                        lastKnown.alert = effectiveAlert; lastKnown.unit_id = effectiveUnit; saveLastKnownToStorage();
+                        const reason = alertReason ? ` ${alertReason}` : '';
+                        wdEl.innerHTML = `<div>WATCHDOG</div><strong style="color:#fff">ALERT</strong>${reason}`;
+                        wdEl.style.background = '#7f1d1d'; wdEl.style.color = '#fff7f7';
                       } else {
-                        // No timestamp and no alert -> show OK (default state)
                         wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
                         wdEl.style.background = '';
                         wdEl.style.color = '';

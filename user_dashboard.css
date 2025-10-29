@@ -386,9 +386,21 @@ html, body {
 }
 
 .water-grid {
-    display: flex;
+    /* Use CSS Grid so both the big left card and the right card stack
+       can expand to fill the available main-content area. This allows
+       cards to fully use horizontal and vertical space instead of
+       leaving large empty gaps. */
+    display: grid;
+    grid-template-columns: 1.6fr 1fr; /* left large card and right column */
     gap: 20px;
     align-items: stretch;
+    width: 100%;
+    /* Make the grid fill the main-content area while leaving room for
+       section padding. The min-height keeps previous behavior on small
+       viewports while letting cards stretch on larger screens. */
+    height: calc(100% - 20px);
+    min-height: 520px;
+    box-sizing: border-box;
 }
 
 .big-card {
@@ -399,22 +411,31 @@ html, body {
     padding: 25px;
     text-align: center;
     box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-    min-height: 520px; /* increased to maximize sensor area after removing chart */
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    /* Let the big card stretch to fill the grid row height */
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
 }
-.big-card h3 { font-size: 1.3rem; color: #024a66; margin-bottom: 12px; }
+.big-card h3 { font-size: 1.6rem; color: #024a66; margin-bottom: 14px; letter-spacing: 1px; }
 .big-card #wqiValue {
-    font-size: 2.2rem;
-    font-weight: bold;
+    font-size: 3.6rem;
+    font-weight: 900;
     color: #012b45;
+    margin-top: 8px;
 }
 
 .right-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    /* Make three rows of equal height so sensor cards distribute evenly */
+    grid-template-rows: repeat(3, 1fr);
     gap: 15px;
-    flex: 1 1 0;
+    height: 100%;
+    box-sizing: border-box;
 }
 
 .sensor-card {
@@ -428,7 +449,14 @@ html, body {
     transition: transform 0.2s ease;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    min-height: 140px; /* larger sensor cards to match admin sizing */
+    /* Allow grid to control height; remove fixed min-height so cards share available space */
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
 }
 .sensor-card:hover { transform: translateY(-4px); }
 
@@ -453,20 +481,30 @@ html, body {
 }
 
 .sensor-card h3 {
-    font-size: 0.9rem;
+    font-size: 1.15rem;
     color: #024a66;
-    margin-bottom: 27px;
+    margin-bottom: 18px;
     text-transform: uppercase;
-    letter-spacing: .5px;
+    letter-spacing: .6px;
+    font-weight: 800;
 }
 .sensor-card p {
-    font-size: 1.1rem;
-    font-weight: bold;
+    font-size: 2rem;
+    font-weight: 900;
     color: #012b45;
     margin: 0;
+    line-height: 1;
 }
 
-.sensor-card.wide { grid-column: span 2; }
+.sensor-card.wide { grid-column: 1 / -1; }
+
+/* Responsive adjustments: scale down on smaller screens */
+@media (max-width: 900px) {
+    .big-card h3 { font-size: 1.4rem; }
+    .big-card #wqiValue { font-size: 2.6rem; }
+    .sensor-card h3 { font-size: 1rem; }
+    .sensor-card p { font-size: 1.4rem; }
+}
 
 /* ===============================
      CHART
