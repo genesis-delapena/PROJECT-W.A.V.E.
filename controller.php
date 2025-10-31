@@ -342,20 +342,15 @@ if (isset($_SESSION["LAR_level"])) {
         <p id="wqiDisplay" name="wqi_value">WQI: --</p>
         <p id="doDisplay" name="dissolve_sensor">DO (mg/L): --</p>
   <p id="turbidityDisplay" name="turbidity_sensor">Turbidity: --</p>
-  <p id="turbidity" style="margin-top:4px;font-weight:700;">--</p>
         <p id="ammoniaDisplay" name="ammonia_sensor">Ammonia (mg/L): --</p>
         <p id="phDisplay" name="ph_sensor">pH Level: --</p>
   <p id="tempDisplay" name="temperature_sensor">Temperature (°C): --</p>
-  <p id="temperature" style="margin-top:4px;font-weight:700;">--</p>
 
         <!-- Raw/extra sensor list (populated dynamically) -->
         <div id="rawSensors" style="margin-top:10px;font-size:12px;color:#cbd5e1;">&nbsp;</div>
 
       </div>
-      <div class="extra-box">
-        <h2>Battery Percentage</h2>
-        <p id="batteryDisplay">Additional data...</p>
-      </div>
+      <!-- battery card removed per request -->
     </div>
 
     <!-- Center: Compass -->
@@ -758,16 +753,18 @@ if (ticksG && labelsG && headingReadout && boat) {
       if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`;
       if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`;
       if (typeof lastKnown.turbidity !== 'undefined') {
-        document.getElementById('turbidityDisplay').textContent = `Turbidity: ${lastKnown.turbidity}`;
-        try { const tEl = document.getElementById('turbidity'); if (tEl) tEl.textContent = lastKnown.turbidity; } catch(e){}
+        const tv = parseFloat(lastKnown.turbidity);
+        const turbText = (Number.isFinite(tv)) ? tv.toFixed(1) : String(lastKnown.turbidity);
+        document.getElementById('turbidityDisplay').textContent = `Turbidity: ${turbText}`;
       }
       if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`;
       if (typeof lastKnown.ph !== 'undefined') document.getElementById('phDisplay').textContent = `pH Level: ${lastKnown.ph}`;
       if (typeof lastKnown.temp !== 'undefined') {
-        document.getElementById('tempDisplay').textContent = `Temperature (°C): ${lastKnown.temp}`;
-        try { const tmpEl = document.getElementById('temperature'); if (tmpEl) tmpEl.textContent = lastKnown.temp; } catch(e){}
+        const tv2 = parseFloat(lastKnown.temp);
+        const tmpText = (Number.isFinite(tv2)) ? tv2.toFixed(2) : String(lastKnown.temp);
+        document.getElementById('tempDisplay').textContent = `Temperature (°C): ${tmpText}`;
       }
-      if (typeof lastKnown.battery !== 'undefined') document.getElementById('batteryDisplay').textContent = `${lastKnown.battery}`;
+  // batteryDisplay removed; no-op
 
       // CA TEMP card
       const caTempEl = document.getElementById('caTemp');
@@ -976,18 +973,29 @@ if (ticksG && labelsG && headingReadout && boat) {
                 const wqi = getField(msg, ['WQI', 'wqi']);
                 const doV = getField(msg, ['DO', 'do', 'DISSOLVED_OXYGEN']);
                 const turb = getField(msg, ['NTU_VALUE','NTU','TURB','TURBIDITY','turbidity']);
-                const ammo = getField(msg, ['AMMO', 'AMMONIA', 'ammonia']);
+                // Accept NH3_PPM and other common ammonia key variants
+                const ammo = getField(msg, ['NH3_PPM','NH3','AMMO', 'AMMONIA', 'ammonia']);
+                const ammoStatus = getField(msg, ['NH3_STATUS','AMMO_STATUS','AMMONIA_STATUS','NH3_STATUS_MSG']);
                 const ph = getField(msg, ['PH', 'pH']);
                 const temp = getField(msg, ['TEMP_C','IMU_TEMP_C','TEMP','temperature']);
-                const batt = getField(msg, ['BATTERY', 'battery', 'BATT']);
+                // battery data removed from controller UI; not collected here
+                const batt = undefined;
 
                 try { if (typeof wqi !== 'undefined') { lastKnown.wqi = wqi; saveLastKnownToStorage(); } } catch(e){}
                 try { if (typeof doV !== 'undefined') { lastKnown.do = doV; saveLastKnownToStorage(); } } catch(e){}
                 try { if (typeof turb !== 'undefined') { lastKnown.turbidity = turb; saveLastKnownToStorage(); } } catch(e){}
-                try { if (typeof ammo !== 'undefined') { lastKnown.ammonia = ammo; saveLastKnownToStorage(); } } catch(e){}
+                try {
+                  if (typeof ammo !== 'undefined') {
+                    // store as a formatted string with two decimals when numeric
+                    const a = parseFloat(ammo);
+                    lastKnown.ammonia = Number.isFinite(a) ? a.toFixed(2) : String(ammo);
+                    saveLastKnownToStorage();
+                  }
+                } catch(e){}
+                try { if (typeof ammoStatus !== 'undefined') { lastKnown.ammonia_status = ammoStatus; saveLastKnownToStorage(); } } catch(e){}
                 try { if (typeof ph !== 'undefined') { lastKnown.ph = ph; saveLastKnownToStorage(); } } catch(e){}
                 try { if (typeof temp !== 'undefined') { lastKnown.temp = temp; saveLastKnownToStorage(); } } catch(e){}
-                try { if (typeof batt !== 'undefined') { lastKnown.battery = batt; saveLastKnownToStorage(); } } catch(e){}
+                // battery persistence removed
 
                 // Render sensor displays from lastKnown so values persist even if a message omits a field
                 try { if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`; } catch(e){}
@@ -997,7 +1005,6 @@ if (ticksG && labelsG && headingReadout && boat) {
                     const tv = parseFloat(lastKnown.turbidity);
                     const turbText = (Number.isFinite(tv)) ? tv.toFixed(1) : String(lastKnown.turbidity);
                     document.getElementById('turbidityDisplay').textContent = `Turbidity: ${turbText}`;
-                    try { const tEl = document.getElementById('turbidity'); if (tEl) tEl.textContent = turbText; } catch(e){}
                   }
                 } catch(e){}
                 try { if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`; } catch(e){}
@@ -1007,10 +1014,9 @@ if (ticksG && labelsG && headingReadout && boat) {
                     const tv2 = parseFloat(lastKnown.temp);
                     const tmpText = (Number.isFinite(tv2)) ? tv2.toFixed(2) : String(lastKnown.temp);
                     document.getElementById('tempDisplay').textContent = `Temperature (°C): ${tmpText}`;
-                    try { const tmpEl = document.getElementById('temperature'); if (tmpEl) tmpEl.textContent = tmpText; } catch(e){}
                   }
                 } catch(e){}
-                try { if (typeof lastKnown.battery !== 'undefined') document.getElementById('batteryDisplay').textContent = `${lastKnown.battery}`; } catch(e){}
+                // batteryDisplay removed from DOM; nothing to render
 
                 // We intentionally DO NOT populate debug/raw keys inside the SENSORS card.
                 // The sensors card should only show the canonical water-quality sensors.

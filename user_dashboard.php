@@ -303,7 +303,9 @@ function performLogout() {
             <p id="turbidity">--</p>
             <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
           </div>
-          <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p></div>
+          <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p>
+            <small id="ammonia_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
+          </div>
           <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div>
           <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3>
             <p id="temperature">--</p>
@@ -1115,6 +1117,10 @@ window.addEventListener('storage', function(e) {
       const turbStatus = getField(msg, ['NTU_STATUS','TURB_STATUS','TURBIDITY_STATUS','NTU_STATUS_MSG','TURB_STATUS_MSG']);
       const tempStatus = getField(msg, ['TEMP_STATUS','TEMPERATURE_STATUS','TEMP_STATUS_MSG']);
 
+  // Ammonia value and status (accept NH3_PPM and common variants). Show ammonia with two decimals.
+  const ammo = getField(msg, ['NH3_PPM','NH3','AMMO','AMMONIA','ammonia']);
+  const ammoStatus = getField(msg, ['NH3_STATUS','AMMO_STATUS','AMMONIA_STATUS','NH3_STATUS_MSG']);
+
       if (typeof turb !== 'undefined' && turb !== null) {
         const el = document.getElementById('turbidity'); if (el) el.textContent = fmtNum(turb, 1);
       }
@@ -1127,16 +1133,82 @@ window.addEventListener('storage', function(e) {
       if (tStatEl) {
         if (typeof turbStatus !== 'undefined' && turbStatus !== null && String(turbStatus).trim() !== '') {
           tStatEl.textContent = String(turbStatus);
+          _persistLastKnownPatch('turbidity_status', String(turbStatus));
         } else {
-          tStatEl.textContent = '';
+          // restore persisted turbidity status if present
+          try {
+            const rawLK = localStorage.getItem('wave_lastKnown_v1');
+            if (rawLK) {
+              const obj = JSON.parse(rawLK);
+              if (obj && obj.turbidity_status) tStatEl.textContent = obj.turbidity_status; else tStatEl.textContent = '';
+            } else {
+              tStatEl.textContent = '';
+            }
+          } catch (e) { tStatEl.textContent = ''; }
         }
       }
       const tmpStatEl = document.getElementById('temperature_status');
       if (tmpStatEl) {
         if (typeof tempStatus !== 'undefined' && tempStatus !== null && String(tempStatus).trim() !== '') {
           tmpStatEl.textContent = String(tempStatus);
+          _persistLastKnownPatch('temperature_status', String(tempStatus));
         } else {
-          tmpStatEl.textContent = '';
+          // restore persisted temperature status if present
+          try {
+            const rawLK = localStorage.getItem('wave_lastKnown_v1');
+            if (rawLK) {
+              const obj = JSON.parse(rawLK);
+              if (obj && obj.temperature_status) tmpStatEl.textContent = obj.temperature_status; else tmpStatEl.textContent = '';
+            } else {
+              tmpStatEl.textContent = '';
+            }
+          } catch (e) { tmpStatEl.textContent = ''; }
+        }
+      }
+
+      // Update ammonia display and persist ammonia + status so Monitoring keeps showing last-known values
+      const ammoEl = document.getElementById('ammonia');
+      const ammoStatEl = document.getElementById('ammonia_status');
+      function _persistLastKnownPatch(key, value) {
+        try {
+          const raw = localStorage.getItem('wave_lastKnown_v1');
+          const obj = raw ? JSON.parse(raw) : {};
+          obj[key] = value;
+          localStorage.setItem('wave_lastKnown_v1', JSON.stringify(obj));
+        } catch (e) { /* ignore */ }
+      }
+
+      if (typeof ammo !== 'undefined' && ammo !== null && String(ammo).trim() !== '') {
+        if (ammoEl) ammoEl.textContent = fmtNum(ammo, 2);
+        // persist formatted numeric string
+        _persistLastKnownPatch('ammonia', (fmtNum(ammo,2)));
+      } else {
+        // if current message lacks ammonia, fall back to persisted value (do not overwrite if live absent)
+        try {
+          const raw = localStorage.getItem('wave_lastKnown_v1');
+          if (raw) {
+            const obj = JSON.parse(raw);
+            if (obj && typeof obj.ammonia !== 'undefined' && ammoEl && (ammoEl.textContent === '--' || !ammoEl.textContent)) {
+              ammoEl.textContent = obj.ammonia;
+            }
+          }
+        } catch(e) {}
+      }
+
+      if (ammoStatEl) {
+        if (typeof ammoStatus !== 'undefined' && ammoStatus !== null && String(ammoStatus).trim() !== '') {
+          ammoStatEl.textContent = String(ammoStatus);
+          _persistLastKnownPatch('ammonia_status', String(ammoStatus));
+        } else {
+          // restore persisted status if present
+          try {
+            const raw = localStorage.getItem('wave_lastKnown_v1');
+            if (raw) {
+              const obj = JSON.parse(raw);
+              if (obj && obj.ammonia_status) ammoStatEl.textContent = obj.ammonia_status;
+              else ammoStatEl.textContent = '';
+            }
+          } catch(e) { ammoStatEl.textContent = ''; }
         }
       }
 
@@ -1168,6 +1240,17 @@ window.addEventListener('storage', function(e) {
       setTimeout(() => { const active = document.querySelector('.nav-item.active')?.dataset.tab; if (active === 'water') startUserMonitoring(); else stopUserMonitoring(); }, 120);
     }
   }, true);
+  // Restore persisted last-known ammonia/status immediately so Monitoring shows stable values
+  try {
+    const rawLK = localStorage.getItem('wave_lastKnown_v1');
+    if (rawLK) {
+      const lk = JSON.parse(rawLK);
+      if (lk) {
+        try { if (lk.ammonia && document.getElementById('ammonia')) document.getElementById('ammonia').textContent = lk.ammonia; } catch(e){}
+        try { if (lk.ammonia_status && document.getElementById('ammonia_status')) document.getElementById('ammonia_status').textContent = lk.ammonia_status; } catch(e){}
+      }
+    }
+  } catch(e) {}
 })();
 </script>
 </body>

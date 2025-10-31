@@ -122,8 +122,9 @@ try {
    - Frontend will call ?api=get first, then fallback to Flask host.
    ───────────────────────────────────────────────────────────────────────────── */
 if (isset($_GET['api']) && $_GET['api'] === 'get') {
-    // Adjust the Flask server IP/port here if needed:
-    $flaskUrl = "http://192.168.0.3:5000/get";
+  // Adjust the Python server IP/port here if needed (Server_PC.py prints the server address):
+  // Server_PC.py currently prints: Server running at http://192.168.0.2:5000
+  $flaskUrl = "http://192.168.0.2:5000/get";
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $flaskUrl);
@@ -414,8 +415,8 @@ input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear { display: none !important; }
 input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; visibility: hidden !important; }
 .error-msg { color: #e53935; font-size: 13px; margin-top: 6px; display: none; }
-/* Live chart area */
-.chart-container { height: 360px; margin-top: 18px; padding-bottom: 8px; }
+/* Live chart area (reduced height so axis labels like 0 remain visible) */
+.chart-container { height: 240px; margin-top: 18px; padding-bottom: 8px; }
 /* Optional: keep the separate "last updated" DOM element hidden since we draw it on chart */
 #lastUpdatedLabel { display: none; }
 
@@ -604,12 +605,12 @@ body {
   color: #f1faff;
   z-index: 2;
 }
-.chart-container {
+  .chart-container {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 18px rgba(0,0,0,0.10);
   z-index: 2;
-  height: 300px;
+  height: 240px;
   margin-bottom: 0;
   padding-bottom: 0;
   overflow-y: visible;
@@ -801,20 +802,27 @@ body {
     <div class="water-grid"> 
       <div class="big-card sensor-card" onclick="switchChart('WQI')"> 
         <h3>Water Quality Index</h3> 
-        <p id="wqiValue" name="wqi_value">--</p> 
+        <p id="wqiValue" name="wqi_value">--</p>
+        <small id="wqi_status" style="display:block;margin-top:6px;font-size:0.85rem;color:#0f3b4a;opacity:0.95;">&nbsp;</small>
       </div> 
       <div class="right-grid"> 
         <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p></div> 
-        <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3><p id="turbidity">--</p></div> 
-        <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p></div> 
+        <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3><p id="turbidity">--</p>
+          <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
+        </div> 
+        <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p>
+          <small id="ammonia_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
+        </div> 
         <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div> 
-        <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3><p id="temperature">--</p></div>
+        <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3><p id="temperature">--</p>
+          <small id="temperature_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
+        </div>
       </div> 
     </div> 
 
     <div class="card wide chart-container">
       <h3 id="chartTitle">WQI Live Chart</h3>
-  <canvas id="liveChart" height="140" style="width:100%;max-width:100%;display:block;"></canvas>
+  <canvas id="liveChart" height="220" style="width:100%;max-width:100%;display:block;"></canvas>
 	</div>
 
     <div style="margin-top:10px;color:#555;font-size:0.95rem;">
@@ -1482,7 +1490,7 @@ const sensorConfig = {
   PH:   { label: "pH",          color: "teal",   max: 14  },
   TURB: { label: "Turbidity",   color: "orange", max: 230 },
   TEMP: { label: "Temperature", color: "red",    max: 50  },
-  AMMO: { label: "Ammonia",     color: "purple", max: 20  },
+  AMMO: { label: "Ammonia",     color: "purple", max: 1   },
   DO:   { label: "DO",          color: "blue",   max:     15  }
 };
 
@@ -1493,64 +1501,88 @@ const maxPoints = 60;
 const lastValueLabelPlugin = {
   id: 'lastValueLabel',
   afterDatasetsDraw(chart) {
-    const { ctx } = chart;
-    const ds = chart
-    if (!ds || ds.data.length === 0) return;
-    const meta = chart.getDatasetMeta(0);
-    const lastIndex = ds.data.length - 1;
-    const lastPoint = meta.data[lastIndex];
-    if (!lastPoint) return;
-    const value = ds.data[lastIndex];
-    ctx.save();
-    ctx.font = '12px Segoe UI, sans-serif';
-    ctx.fillStyle = '#333';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(String(value), lastPoint.x + 6, lastPoint.y - 6);
-    ctx.restore();
+    try {
+      const { ctx } = chart;
+      // Find the active dataset by matching label to activeSensor config
+      const activeLabel = sensorConfig[activeSensor].label;
+      const dsIndex = chart.data.datasets.findIndex(d => d.label === activeLabel);
+      if (dsIndex < 0) return;
+      const dsMeta = chart.getDatasetMeta(dsIndex);
+      const ds = chart.data.datasets[dsIndex];
+      if (!ds || ds.data.length === 0) return;
+      const lastIndex = ds.data.length - 1;
+      const lastPoint = dsMeta.data[lastIndex];
+      if (!lastPoint) return;
+      const value = ds.data[lastIndex];
+      ctx.save();
+      ctx.font = '12px Segoe UI, sans-serif';
+      ctx.fillStyle = '#333';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(String(value), lastPoint.x + 6, lastPoint.y - 6);
+      ctx.restore();
+    } catch (e) { /* ignore plugin errors */ }
   }
 };
 
 const lastUpdatedPlugin = {
   id: 'lastUpdatedPlugin',
   afterDraw(chart) {
-    const ctx = chart.ctx;
-    const area = chart.chartArea;
-    const txt = document.getElementById("lastUpdatedValue").textContent;
-    if (!txt || txt === "--") return;
-    ctx.save();
-    ctx.font = '12px Segoe UI, sans-serif';
-    ctx.fillStyle = '#444';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText("Last updated: " + txt, area.left + 6, area.bottom + 4);
-    ctx.restore();
+    try {
+      const ctx = chart.ctx;
+      const area = chart.chartArea;
+      const txt = document.getElementById("lastUpdatedValue").textContent;
+      if (!txt || txt === "--") return;
+      ctx.save();
+      ctx.font = '12px Segoe UI, sans-serif';
+      ctx.fillStyle = '#444';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const yPos = Math.max(area.top + 8, area.bottom - 20);
+      ctx.fillText("Last updated: " + txt, area.left + 6, yPos);
+      ctx.restore();
+    } catch(e) { /* ignore */ }
   }
 };
 
 function setupChart(sensorKey){
   const ctx = document.getElementById('liveChart').getContext('2d');
-  if (liveChart) liveChart.destroy();
-
   const conf = sensorConfig[sensorKey];
   document.getElementById('chartTitle').innerText = conf.label + ' Live Chart';
 
+  // If a chart already exists, simply update title/axis and toggle visibility
+  if (liveChart) {
+    // Update y axis bounds for the newly active sensor
+    liveChart.options.scales.y.max = conf.max;
+    liveChart.options.scales.y.ticks.stepSize = (conf.max <= 1) ? 0.1 : Math.max(1, Math.round(conf.max/5));
+    // Hide all datasets except the active one
+    liveChart.data.datasets.forEach(d => { d.hidden = (d.label !== conf.label); });
+    liveChart.update('none');
+    chartReady = true;
+    return;
+  }
+
+  // First-time chart creation: create one dataset per sensor so they all keep
+  // receiving data in the background even when not visible.
+  const datasets = Object.keys(sensorConfig).map(k => {
+    const c = sensorConfig[k];
+    return {
+      label: c.label,
+      borderColor: c.color,
+      backgroundColor: 'transparent',
+      data: [],
+      fill: false,
+      tension: 0.25,
+      pointRadius: 2.5,
+      pointHoverRadius: 6,
+      borderWidth: 2,
+      hidden: (k !== sensorKey)
+    };
+  });
+
   liveChart = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: conf.label,
-        borderColor: conf.color,
-        backgroundColor: 'transparent',
-        data: [],
-        fill: false,
-        tension: 0.25,
-        pointRadius: 2.5,
-        pointHoverRadius: 6,
-        borderWidth: 2
-      }]
-    },
+    data: { labels: [], datasets: datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -1560,24 +1592,26 @@ function setupChart(sensorKey){
         legend: { display: false },
         tooltip: {
           enabled: true,
-          callbacks: { label: function(ctx){ return `${conf.label}: ${ctx.parsed.y}`; } }
+          callbacks: { label: function(ctx){ return `${ctx.dataset.label}: ${ctx.parsed.y}`; } }
         }
       },
       scales: {
         x: { display: true, ticks: { maxRotation: 0, autoSkip: true } },
         y: {
+          beginAtZero: true,
+          suggestedMin: 0,
           min: 0,
           max: conf.max,
           ticks: {
-            stepSize: Math.max(1, Math.round(conf.max/5)),
-            padding: 8,
+            stepSize: (conf.max <= 1) ? 0.1 : Math.max(1, Math.round(conf.max/5)),
+            padding: 6,
             font: { size: 12 }
           }
         }
       },
-      layout: { padding: { bottom: 32 } }
+      layout: { padding: { bottom: 18 } }
     },
-    plugins: [lastValueLabelPlugin, lastUpdatedPlugin]
+    plugins: [lastValueLabelPlugin]
   });
   chartReady = true;
 }
@@ -1595,7 +1629,8 @@ function switchChart(sensorKey){ activeSensor = sensorKey; setupChart(sensorKey)
 /* ──────────────────────────────────────────────────────────────────
    MONITORING: Fetch from Flask with same-origin proxy fallback
    ────────────────────────────────────────────────────────────────── */
-const FLASK_BASE = "http://192.168.0.3:5000";
+// Primary fallback host for direct fetch (matches Server_PC.py output)
+const FLASK_BASE = "http://192.168.0.2:5000";
 async function robustFetchJson() {
   const sameOrigin = `${window.location.pathname}?api=get`;
   const remote     = `${FLASK_BASE}/get`;
@@ -1619,6 +1654,115 @@ function formatTimestamp(ts) {
   hours = hours % 12; hours = hours ? hours : 12;
   return `${mm}/${dd}/${yyyy} ${hours}:${minutes} ${ampm}`;
 }
+// Helpers to compute Water Quality Index (WQI) from available sensor values.
+// Each parameter is converted to a 0-100 quality index (Qi) using simple,
+// documented heuristics. We then compute the weighted sum using official
+// weights: PH 0.2, DO 0.3, TURB 0.2, AMMO 0.2, TEMP 0.1. If one or more
+// components are missing, the remaining weights are re-normalized so the
+// computed WQI is meaningful even when DO or PH are not present.
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+function scorePH(pH){
+  if (!Number.isFinite(pH)) return null;
+  // Ideal pH around 7. Deviations penalized strongly: factor chosen so
+  // a 0.5 deviation -> ~33.3 drop (matches example mapping).
+  const q = 100 - Math.abs(pH - 7) * 66.6666667;
+  return clamp(Math.round(q * 10) / 10, 0, 100);
+}
+function scoreDO(d){
+  if (!Number.isFinite(d)) return null;
+  // Higher DO is better; normalize against 8 mg/L as a practical good value.
+  const q = (d / 8) * 100;
+  return clamp(Math.round(q * 10) / 10, 0, 100);
+}
+function scoreTurb(t){
+  if (!Number.isFinite(t)) return null;
+  // Lower turbidity is better. Map 0->100, 25 NTU -> 0 (linear).
+  const q = 100 - (t / 25) * 100;
+  return clamp(Math.round(q * 10) / 10, 0, 100);
+}
+function scoreNH3(nh3){
+  if (!Number.isFinite(nh3)) return null;
+  // Low ammonia is better. Map 0->100, 0.5 mg/L -> 0 (linear).
+  const q = 100 - (nh3 / 0.5) * 100;
+  return clamp(Math.round(q * 10) / 10, 0, 100);
+}
+function scoreTemp(t){
+  if (!Number.isFinite(t)) return null;
+  // Small deviations from an ideal temperature (25C) penalized lightly.
+  // Each degree away reduces score by ~2 points (so 3C -> -6 => 94 for 28C).
+  const q = 100 - Math.abs(t - 25) * 2;
+  return clamp(Math.round(q * 10) / 10, 0, 100);
+}
+function computeWQIFromValues(vals){
+  // vals: { PH, DO, TURB, AMMO, TEMP } numeric or undefined
+  const weights = { PH:0.2, DO:0.3, TURB:0.2, AMMO:0.2, TEMP:0.1 };
+  const qi = {};
+  qi.PH   = Number.isFinite(vals.PH)   ? scorePH(vals.PH)   : null;
+  qi.DO   = Number.isFinite(vals.DO)   ? scoreDO(vals.DO)   : null;
+  qi.TURB = Number.isFinite(vals.TURB) ? scoreTurb(vals.TURB) : null;
+  qi.AMMO = Number.isFinite(vals.AMMO) ? scoreNH3(vals.AMMO) : null;
+  qi.TEMP = Number.isFinite(vals.TEMP) ? scoreTemp(vals.TEMP) : null;
+
+  // Sum weighted Qi for available components and renormalize weights if any missing
+  let weightedSum = 0;
+  let weightSum = 0;
+  Object.keys(weights).forEach(k => {
+    if (qi[k] !== null && typeof qi[k] !== 'undefined') {
+      weightedSum += qi[k] * weights[k];
+      weightSum += weights[k];
+    }
+  });
+  if (weightSum <= 0) return null;
+  const wqi = Math.round((weightedSum / weightSum) * 10) / 10; // one decimal place
+  return wqi;
+}
+function wqiStatusLabel(wqi){
+  if (!Number.isFinite(wqi)) return '';
+  if (wqi >= 90) return 'Excellent';
+  if (wqi >= 70) return 'Good';
+  if (wqi >= 50) return 'Medium';
+  if (wqi >= 25) return 'Poor';
+  return 'Very Poor';
+}
+// Persist last-known sensor values so the UI doesn't fall back to zeros when data is absent
+const lastKnown = {};
+const LAST_KNOWN_KEY = 'wave_lastKnown_v1';
+function loadLastKnownFromStorage(){
+  try{
+    const raw = localStorage.getItem(LAST_KNOWN_KEY);
+    if (raw){ const parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') Object.assign(lastKnown, parsed); }
+  }catch(e){ console.error('lastKnown load error', e); }
+}
+function saveLastKnownToStorage(){
+  try{ localStorage.setItem(LAST_KNOWN_KEY, JSON.stringify(lastKnown)); }catch(e){ /* noop */ }
+}
+function renderFromLastKnown(){
+  try{
+    if (typeof lastKnown.WQI !== 'undefined') document.getElementById('wqiValue').textContent = lastKnown.WQI;
+  if (typeof lastKnown.WQI_STATUS !== 'undefined') { const s = document.getElementById('wqi_status'); if (s) s.textContent = lastKnown.WQI_STATUS || ''; }
+    if (typeof lastKnown.PH !== 'undefined') document.getElementById('ph_level').textContent = lastKnown.PH;
+    if (typeof lastKnown.TURB !== 'undefined') document.getElementById('turbidity').textContent = (Number.isFinite(Number(lastKnown.TURB)) ? Number(lastKnown.TURB).toFixed(1) : String(lastKnown.TURB));
+    if (typeof lastKnown.TEMP !== 'undefined') document.getElementById('temperature').textContent = (Number.isFinite(Number(lastKnown.TEMP)) ? Number(lastKnown.TEMP).toFixed(2) : String(lastKnown.TEMP));
+    if (typeof lastKnown.AMMO !== 'undefined') {
+      const aVal = lastKnown.AMMO;
+      document.getElementById('ammonia').textContent = (Number.isFinite(Number(aVal)) ? Number(aVal).toFixed(2) : String(aVal));
+    }
+    if (typeof lastKnown.DO !== 'undefined') document.getElementById('do').textContent = lastKnown.DO;
+    // status fields
+    if (typeof lastKnown.TURB_STATUS !== 'undefined') {
+      const e = document.getElementById('turbidity_status'); if (e) e.textContent = lastKnown.TURB_STATUS || '';
+    }
+    if (typeof lastKnown.TEMP_STATUS !== 'undefined') {
+      const e2 = document.getElementById('temperature_status'); if (e2) e2.textContent = lastKnown.TEMP_STATUS || '';
+    }
+    if (typeof lastKnown.AMMO_STATUS !== 'undefined') {
+      const e3 = document.getElementById('ammonia_status'); if (e3) e3.textContent = lastKnown.AMMO_STATUS || '';
+    }
+  }catch(e){ /* ignore render errors */ }
+}
+// Load persisted values immediately so the page shows them while waiting for first fetch
+loadLastKnownFromStorage();
+renderFromLastKnown();
 async function fetchData() {
   // If chart not ready or Monitoring tab not active, skip to reduce jank
   const active = document.querySelector(".nav-item.active")?.dataset.tab;
@@ -1628,49 +1772,210 @@ async function fetchData() {
     const wrapper = await robustFetchJson();
     if (wrapper && typeof wrapper.message === 'object') {
       const s = wrapper.message;
-      // Accept variants for turbidity and temperature (NTU_VALUE, TEMP_C, IMU_TEMP_C)
-      const turbRaw = s.TURB ?? s.turb ?? s.TURBIDITY ?? s.turbidity ?? s.NTU_VALUE ?? s.ntu_value;
-      const tempRaw = s.TEMP ?? s.temp ?? s.TEMP_C ?? s.temp_c ?? s.IMU_TEMP_C ?? s.imu_temp_c;
+  // Accept variants for turbidity, temperature and ammonia (NTU_VALUE, TEMP_C, IMU_TEMP_C, NH3_PPM)
+  const turbRaw = s.TURB ?? s.turb ?? s.TURBIDITY ?? s.turbidity ?? s.NTU_VALUE ?? s.ntu_value;
+  const tempRaw = s.TEMP ?? s.temp ?? s.TEMP_C ?? s.temp_c ?? s.IMU_TEMP_C ?? s.imu_temp_c;
+  const ammoRaw = s.AMMO ?? s.ammo ?? s.NH3_PPM ?? s.NH3_PPM_VALUE ?? s.nh3_ppm ?? s.NH3_PPM_VALUE;
 
       const data = {
         WQI:  safeNumber(s.WQI  ?? s.wqi),
         PH:   safeNumber(s.PH   ?? s.pH),
         TURB: safeNumber(turbRaw ?? s.TURB ?? s.turb),
         TEMP: safeNumber(tempRaw ?? s.TEMP ?? s.temp),
-        AMMO: safeNumber(s.AMMO ?? s.ammo),
+        AMMO: safeNumber(ammoRaw ?? s.AMMO ?? s.ammo),
         DO:   safeNumber(s.DO   ?? s.do)
       };
 
-      // Display formatted numbers when raw values are present; otherwise fall back to numeric-safe values
-      document.getElementById("wqiValue").textContent    = data.WQI;
-      document.getElementById("ph_level").textContent    = data.PH;
+      // Show fresh values when present; otherwise use lastKnown values to avoid falling back to zeros
+      const present = v => (typeof v !== 'undefined' && v !== null && String(v).trim() !== '');
+
+      // WQI: prefer server-provided WQI; otherwise compute from available
+      // sensor components (PH, DO, TURB, AMMO, TEMP). When a component is
+      // missing we fall back to the persisted lastKnown values and
+      // renormalize weights so WQI is still meaningful.
+      if (present(s.WQI ?? s.wqi)) {
+        const w = safeNumber(s.WQI ?? s.wqi);
+        document.getElementById("wqiValue").textContent = w;
+        const statusLabel = wqiStatusLabel(w);
+        const sEl = document.getElementById('wqi_status'); if (sEl) sEl.textContent = statusLabel;
+        lastKnown.WQI = w;
+        lastKnown.WQI_STATUS = statusLabel;
+      } else {
+        // Build a set of numeric values from the fresh payload or lastKnown
+        const phVal = present(s.PH ?? s.pH) ? safeNumber(s.PH ?? s.pH) : (typeof lastKnown.PH !== 'undefined' ? Number(lastKnown.PH) : undefined);
+        const doVal = present(s.DO ?? s.do) ? safeNumber(s.DO ?? s.do) : (typeof lastKnown.DO !== 'undefined' ? Number(lastKnown.DO) : undefined);
+        const turbVal = present(turbRaw) ? safeNumber(turbRaw) : (typeof lastKnown.TURB !== 'undefined' ? Number(lastKnown.TURB) : undefined);
+        const ammoVal = present(ammoRaw) ? safeNumber(ammoRaw) : (typeof lastKnown.AMMO !== 'undefined' ? Number(lastKnown.AMMO) : undefined);
+        const tempVal = present(tempRaw) ? safeNumber(tempRaw) : (typeof lastKnown.TEMP !== 'undefined' ? Number(lastKnown.TEMP) : undefined);
+
+        const computed = computeWQIFromValues({ PH: phVal, DO: doVal, TURB: turbVal, AMMO: ammoVal, TEMP: tempVal });
+        if (computed !== null) {
+          document.getElementById("wqiValue").textContent = computed;
+          const statusLabel = wqiStatusLabel(computed);
+          const sEl = document.getElementById('wqi_status'); if (sEl) sEl.textContent = statusLabel;
+          lastKnown.WQI = computed;
+          lastKnown.WQI_STATUS = statusLabel;
+        } else if (typeof lastKnown.WQI !== 'undefined') {
+          document.getElementById("wqiValue").textContent = lastKnown.WQI;
+          const sEl = document.getElementById('wqi_status'); if (sEl) sEl.textContent = (typeof lastKnown.WQI_STATUS !== 'undefined') ? lastKnown.WQI_STATUS : wqiStatusLabel(Number(lastKnown.WQI));
+        } else {
+          document.getElementById("wqiValue").textContent = data.WQI;
+        }
+      }
+
+      // PH
+      if (present(s.PH ?? s.pH)) {
+        const p = safeNumber(s.PH ?? s.pH);
+        document.getElementById("ph_level").textContent = p;
+        lastKnown.PH = p;
+      } else if (typeof lastKnown.PH !== 'undefined') {
+        document.getElementById("ph_level").textContent = lastKnown.PH;
+      } else {
+        document.getElementById("ph_level").textContent = data.PH;
+      }
+
+      // Turbidity
       const turbEl = document.getElementById("turbidity");
       if (turbEl) {
-        if (typeof turbRaw !== 'undefined' && turbRaw !== null && String(turbRaw).trim() !== '') {
-          const n = Number(String(turbRaw).trim()); turbEl.textContent = Number.isFinite(n) ? n.toFixed(1) : String(turbRaw);
+        if (present(turbRaw)) {
+          const n = Number(String(turbRaw).trim());
+          const v = Number.isFinite(n) ? n.toFixed(1) : String(turbRaw);
+          turbEl.textContent = v;
+          lastKnown.TURB = Number.isFinite(n) ? Number(n) : v;
+        } else if (typeof lastKnown.TURB !== 'undefined') {
+          const lk = lastKnown.TURB;
+          turbEl.textContent = Number.isFinite(Number(lk)) ? Number(lk).toFixed(1) : String(lk);
         } else {
           turbEl.textContent = data.TURB;
         }
       }
+
+      // Temperature
       const tempEl = document.getElementById("temperature");
       if (tempEl) {
-        if (typeof tempRaw !== 'undefined' && tempRaw !== null && String(tempRaw).trim() !== '') {
-          const n2 = Number(String(tempRaw).trim()); tempEl.textContent = Number.isFinite(n2) ? n2.toFixed(2) : String(tempRaw);
+        if (present(tempRaw)) {
+          const n2 = Number(String(tempRaw).trim());
+          const v2 = Number.isFinite(n2) ? n2.toFixed(2) : String(tempRaw);
+          tempEl.textContent = v2;
+          lastKnown.TEMP = Number.isFinite(n2) ? Number(n2) : v2;
+        } else if (typeof lastKnown.TEMP !== 'undefined') {
+          const lk2 = lastKnown.TEMP;
+          tempEl.textContent = Number.isFinite(Number(lk2)) ? Number(lk2).toFixed(2) : String(lk2);
         } else {
           tempEl.textContent = data.TEMP;
         }
       }
-      document.getElementById("ammonia").textContent     = data.AMMO;
-      document.getElementById("do").textContent          = data.DO;
+
+      // Ammonia (display with two decimals when numeric). Accept NH3_PPM variants.
+      if (present(ammoRaw)) {
+        const a = safeNumber(ammoRaw);
+        const displayA = Number.isFinite(a) ? a.toFixed(2) : String(ammoRaw);
+        document.getElementById("ammonia").textContent = displayA;
+        lastKnown.AMMO = Number.isFinite(a) ? a : displayA;
+      } else if (typeof lastKnown.AMMO !== 'undefined') {
+        const lkA = lastKnown.AMMO;
+        document.getElementById("ammonia").textContent = Number.isFinite(Number(lkA)) ? Number(lkA).toFixed(2) : String(lkA);
+      } else {
+        const dA = data.AMMO;
+        document.getElementById("ammonia").textContent = Number.isFinite(Number(dA)) ? Number(dA).toFixed(2) : String(dA);
+      }
+
+      // DO
+      if (present(s.DO ?? s.do)) {
+        const dval = safeNumber(s.DO ?? s.do);
+        document.getElementById("do").textContent = dval;
+        lastKnown.DO = dval;
+      } else if (typeof lastKnown.DO !== 'undefined') {
+        document.getElementById("do").textContent = lastKnown.DO;
+      } else {
+        document.getElementById("do").textContent = data.DO;
+      }
+
+      // Populate status strings for turbidity and temperature (accept multiple possible keys)
+      const turbStatusEl = document.getElementById('turbidity_status');
+      if (turbStatusEl) {
+        const turbStatusRaw = s.NTU_STATUS ?? s.NTU_STATUS_MSG ?? s.TURB_STATUS ?? s.TURBIDITY_STATUS ?? s.turb_status ?? s.ntu_status ?? s.TURB_STATUS_MSG ?? s.status_turb;
+        if (present(turbStatusRaw)) {
+          const ts = String(turbStatusRaw);
+          turbStatusEl.textContent = ts;
+          lastKnown.TURB_STATUS = ts;
+        } else if (typeof lastKnown.TURB_STATUS !== 'undefined') {
+          turbStatusEl.textContent = lastKnown.TURB_STATUS || '';
+        } else {
+          turbStatusEl.textContent = '';
+        }
+      }
+      const tempStatusEl = document.getElementById('temperature_status');
+      if (tempStatusEl) {
+        const tempStatusRaw = s.TEMP_STATUS ?? s.TEMP_STATUS_MSG ?? s.TEMP_STATUS_TEXT ?? s.temp_status ?? s.temperature_status ?? s.tempStatus;
+        if (present(tempStatusRaw)) {
+          const tt = String(tempStatusRaw);
+          tempStatusEl.textContent = tt;
+          lastKnown.TEMP_STATUS = tt;
+        } else if (typeof lastKnown.TEMP_STATUS !== 'undefined') {
+          tempStatusEl.textContent = lastKnown.TEMP_STATUS || '';
+        } else {
+          tempStatusEl.textContent = '';
+        }
+      }
+
+      // Ammonia status (accept NH3_ and AMMO_ variants)
+      const ammoStatusEl = document.getElementById('ammonia_status');
+      if (ammoStatusEl) {
+        const ammoStatusRaw = s.NH3_STATUS ?? s.NH3_STATUS_MSG ?? s.NH3_STATUS_TEXT ?? s.NH3_PPM ?? s.AMMO_STATUS ?? s.AMMO_STATUS_MSG ?? s.ammo_status ?? s.nh3_status ?? s.nh3_status_msg;
+        if (present(ammoStatusRaw)) {
+          const at = String(ammoStatusRaw);
+          ammoStatusEl.textContent = at;
+          lastKnown.AMMO_STATUS = at;
+        } else if (typeof lastKnown.AMMO_STATUS !== 'undefined') {
+          ammoStatusEl.textContent = lastKnown.AMMO_STATUS || '';
+        } else {
+          ammoStatusEl.textContent = '';
+        }
+      }
+
+      // Persist any updated lastKnown values (including status fields)
+      saveLastKnownToStorage();
+
       const raw = s.last_updated || s.updated || Date.now();
       document.getElementById("lastUpdatedValue").textContent = formatTimestamp(raw);
 
-      const ds = liveChart.data.datasets[0];
+      // Decide which sensors are present this tick
+      const presentMap = {
+        WQI: present(s.WQI ?? s.wqi),
+        PH:  present(s.PH ?? s.pH),
+        TURB: present(turbRaw),
+        TEMP: present(tempRaw),
+        AMMO: present(ammoRaw),
+        DO:   present(s.DO ?? s.do)
+      };
+
+      // Push a label for this tick (shared timeline)
       liveChart.data.labels.push('');
-      ds.data.push(data[activeSensor]);
-      if (ds.data.length > maxPoints) { ds.data.shift(); liveChart.data.labels.shift(); }
+
+      // For each sensor dataset, pick the fresh value if present otherwise lastKnown fallback
+      Object.keys(sensorConfig).forEach((key, idx) => {
+        let val = data[key];
+        if (!presentMap[key] && typeof lastKnown[key] !== 'undefined') val = lastKnown[key];
+        // Ensure numeric types remain numeric where possible
+        const n = Number(val);
+        const pushVal = Number.isFinite(n) ? n : val;
+        // Push to the dataset matching this key (datasets created in same order)
+        const ds = liveChart.data.datasets[idx];
+        if (!ds) return;
+        ds.data.push(pushVal);
+        if (ds.data.length > maxPoints) ds.data.shift();
+      });
+
+      // Trim labels if needed
+      if (liveChart.data.labels.length > maxPoints) liveChart.data.labels.shift();
+
+      // Update y axis to active sensor's config and refresh chart
       const conf = sensorConfig[activeSensor];
       liveChart.options.scales.y.max = conf.max;
+      liveChart.options.scales.y.ticks.stepSize = (conf.max <= 1) ? 0.1 : Math.max(1, Math.round(conf.max/5));
+      // Ensure only the active dataset is visible
+      liveChart.data.datasets.forEach(d => { d.hidden = (d.label !== conf.label); });
       liveChart.update('none');
     }
   } catch (err) { }
