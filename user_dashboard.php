@@ -296,6 +296,7 @@ function performLogout() {
         <div class="big-card sensor-card" onclick="switchChart('WQI')">
           <h3>Water Quality Index</h3>
           <p id="wqiValue" name="wqi_value">--</p>
+          <small id="wqi_status" style="display:block;margin-top:6px;font-size:0.85rem;color:#083344;opacity:0.95;">&nbsp;</small>
         </div>
         <div class="right-grid">
           <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p></div>
@@ -1113,6 +1114,16 @@ window.addEventListener('storage', function(e) {
         return String(v);
       }
 
+      // WQI helpers (same logic as admin): per-parameter Qi scorers and WQI computation
+      function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+      function scorePH(pH){ if (!Number.isFinite(pH)) return null; const q = 100 - Math.abs(pH - 7) * 66.6666667; return clamp(Math.round(q * 10) / 10, 0, 100); }
+      function scoreDO(d){ if (!Number.isFinite(d)) return null; const q = (d / 8) * 100; return clamp(Math.round(q * 10) / 10, 0, 100); }
+      function scoreTurb(t){ if (!Number.isFinite(t)) return null; const q = 100 - (t / 25) * 100; return clamp(Math.round(q * 10) / 10, 0, 100); }
+      function scoreNH3(nh3){ if (!Number.isFinite(nh3)) return null; const q = 100 - (nh3 / 0.5) * 100; return clamp(Math.round(q * 10) / 10, 0, 100); }
+      function scoreTemp(t){ if (!Number.isFinite(t)) return null; const q = 100 - Math.abs(t - 25) * 2; return clamp(Math.round(q * 10) / 10, 0, 100); }
+      function computeWQIFromValues(vals){ const weights = { PH:0.2, DO:0.3, TURB:0.2, AMMO:0.2, TEMP:0.1 }; const qi = {}; qi.PH = Number.isFinite(vals.PH) ? scorePH(vals.PH) : null; qi.DO = Number.isFinite(vals.DO) ? scoreDO(vals.DO) : null; qi.TURB = Number.isFinite(vals.TURB) ? scoreTurb(vals.TURB) : null; qi.AMMO = Number.isFinite(vals.AMMO) ? scoreNH3(vals.AMMO) : null; qi.TEMP = Number.isFinite(vals.TEMP) ? scoreTemp(vals.TEMP) : null; let weightedSum = 0; let weightSum = 0; Object.keys(weights).forEach(k => { if (qi[k] !== null && typeof qi[k] !== 'undefined') { weightedSum += qi[k] * weights[k]; weightSum += weights[k]; } }); if (weightSum <= 0) return null; return Math.round((weightedSum / weightSum) * 10) / 10; }
+      function wqiStatusLabel(wqi){ if (!Number.isFinite(wqi)) return ''; if (wqi >= 90) return 'Excellent'; if (wqi >= 70) return 'Good'; if (wqi >= 50) return 'Medium'; if (wqi >= 25) return 'Poor'; return 'Very Poor'; }
+
       // Status fields (case-insensitive keys, fallback to common variants)
       const turbStatus = getField(msg, ['NTU_STATUS','TURB_STATUS','TURBIDITY_STATUS','NTU_STATUS_MSG','TURB_STATUS_MSG']);
       const tempStatus = getField(msg, ['TEMP_STATUS','TEMPERATURE_STATUS','TEMP_STATUS_MSG']);
@@ -1212,6 +1223,63 @@ window.addEventListener('storage', function(e) {
         }
       }
 
+      // --- WQI: prefer server-provided WQI, otherwise compute from available values and fallbacks ---
+      try {
+        const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MG_L','DO_MG/L','DO_MG']);
+        const phVal = getField(msg, ['PH','PH_LEVEL','pH']);
+        const wqiServer = getField(msg, ['WQI','WQI_VALUE','WATER_QUALITY_INDEX','WATER_QUALITY']);
+
+        // parse helper
+        function parseNum(v){ if (v === null || typeof v === 'undefined' || v === '') return NaN; const n = Number(String(v).toString().trim()); return Number.isFinite(n) ? n : NaN; }
+
+        const parsedDO = parseNum(doVal);
+        const parsedPH = parseNum(phVal);
+        const parsedTurb = parseNum(turb);
+        const parsedTemp = parseNum(temp);
+        const parsedAmmo = parseNum(ammo);
+
+        let finalWqi = null;
+        let finalWqiStatus = '';
+
+        if (typeof wqiServer !== 'undefined' && wqiServer !== null && String(wqiServer).toString().trim() !== '') {
+          const pv = parseNum(wqiServer);
+          if (Number.isFinite(pv)) {
+            finalWqi = Math.round(pv * 10) / 10;
+            finalWqiStatus = wqiStatusLabel(finalWqi);
+          }
+        }
+
+        if (finalWqi === null) {
+          // build values object using live readings or last-known fallbacks
+          let lastKnown = {};
+          try { lastKnown = JSON.parse(localStorage.getItem('wave_lastKnown_v1') || '{}') || {}; } catch(e) { lastKnown = {}; }
+          const fallback = v => { const n = parseNum(v); return Number.isFinite(n) ? n : NaN; };
+          const vals = {
+            PH: Number.isFinite(parsedPH) ? parsedPH : fallback(lastKnown.ph) || fallback(lastKnown.PH) || NaN,
+            DO: Number.isFinite(parsedDO) ? parsedDO : fallback(lastKnown.do) || fallback(lastKnown.DO) || NaN,
+            TURB: Number.isFinite(parsedTurb) ? parsedTurb : fallback(lastKnown.turbidity) || fallback(lastKnown.TURB) || NaN,
+            AMMO: Number.isFinite(parsedAmmo) ? parsedAmmo : (function(){ const a = lastKnown && lastKnown.ammonia ? Number(String(lastKnown.ammonia).replace(/[^0-9\.\-]/g,'')) : NaN; return Number.isFinite(a)?a:NaN; })(),
+            TEMP: Number.isFinite(parsedTemp) ? parsedTemp : fallback(lastKnown.temperature) || fallback(lastKnown.TEMP) || NaN
+          };
+
+          const computed = computeWQIFromValues(vals);
+          if (Number.isFinite(computed)) {
+            finalWqi = Math.round(computed * 10) / 10;
+            finalWqiStatus = wqiStatusLabel(finalWqi);
+          }
+        }
+
+        // render and persist
+        const wqiEl = document.getElementById('wqiValue');
+        const wqiStatusEl = document.getElementById('wqi_status');
+        if (wqiEl) {
+          if (finalWqi === null || typeof finalWqi === 'undefined' || !Number.isFinite(finalWqi)) wqiEl.textContent = '--'; else wqiEl.textContent = (finalWqi).toFixed(1);
+        }
+        if (wqiStatusEl) wqiStatusEl.textContent = finalWqiStatus || '';
+        if (finalWqi !== null && Number.isFinite(finalWqi)) _persistLastKnownPatch('wqi', (finalWqi).toFixed(1));
+        if (finalWqiStatus) _persistLastKnownPatch('wqi_status', finalWqiStatus);
+      } catch (e) { /* ignore WQI errors */ }
+
     } catch (e) {
       // silent
     }
@@ -1248,6 +1316,8 @@ window.addEventListener('storage', function(e) {
       if (lk) {
         try { if (lk.ammonia && document.getElementById('ammonia')) document.getElementById('ammonia').textContent = lk.ammonia; } catch(e){}
         try { if (lk.ammonia_status && document.getElementById('ammonia_status')) document.getElementById('ammonia_status').textContent = lk.ammonia_status; } catch(e){}
+        try { if (lk.wqi && document.getElementById('wqiValue')) document.getElementById('wqiValue').textContent = String(lk.wqi); } catch(e){}
+        try { if (lk.wqi_status && document.getElementById('wqi_status')) document.getElementById('wqi_status').textContent = lk.wqi_status; } catch(e){}
       }
     }
   } catch(e) {}
