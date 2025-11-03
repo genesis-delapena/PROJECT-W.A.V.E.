@@ -6,6 +6,10 @@ app = Flask(__name__, template_folder="dashboard")
 # Allow requests from any origin (you can restrict this later if you want)
 CORS(app)
 
+# Optional: endpoint to push incoming RPi payloads to a Node realtime server
+import os
+NODE_PUSH_ENDPOINT = os.environ.get('NODE_PUSH_ENDPOINT', 'http://192.168.0.2:3000/rpi/push')
+
 # Store last message (what the RPi sends)
 # Expected structure:
 # {"from": "rpi", "message": {"WQI": ..., "PH": ..., "TURB": ..., "TEMP": ..., "AMMO": ..., "DO": ..., "last_updated": "..."}}
@@ -101,6 +105,20 @@ def receive_message():
             print(f"  - {k}: {v}")
     else:
         print(f"  - message: {last_message['rpi']}")
+
+    # Best-effort: forward this payload to a Node realtime HTTP endpoint so the Node server can immediately
+    # emit to connected socket.io clients without waiting for a poll. Fail silently on errors.
+    try:
+        if NODE_PUSH_ENDPOINT:
+            try:
+                import requests, json
+                headers = {'Content-Type': 'application/json'}
+                payload = {'from': 'rpi', 'message': last_message.get('rpi', {}), 'ts': last_message.get('rpi', {}).get('last_updated')}
+                requests.post(NODE_PUSH_ENDPOINT, data=json.dumps(payload), headers=headers, timeout=0.8)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # Return the normalized shape expected by the PHP frontend
     return jsonify({"status": "ok", "received": last_message, "from": "rpi", "message": last_message.get('rpi', {})})

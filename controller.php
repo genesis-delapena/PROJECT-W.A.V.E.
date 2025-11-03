@@ -405,6 +405,8 @@ if (isset($_SESSION["LAR_level"])) {
     <div class="status-item" id="watchdogStatus"><div>WATCHDOG</div>--</div>
   </div>
 
+  
+
   <!-- Redesigned Ocean/Glassmorphism Back Button -->
   <a href="<?php echo htmlspecialchars($backTarget, ENT_QUOTES, 'UTF-8'); ?>" class="back-btn-ocean" title="Back">
     <i class="fas fa-arrow-left"></i>
@@ -622,6 +624,9 @@ if (ticksG && labelsG && headingReadout && boat) {
 }
   let heading = 0;
   let helmInterval = null;
+  // IMU yaw forwarded from RPi (if available). When fresh, UI heading follows this value.
+  let lastRpiYaw = null;
+  let lastRpiYawTs = 0;
   // helm tap/hold helpers
   let helmPulseTimer = null; // timer that sends 10:STOP after a tap
   let helmPressStart = null; // timestamp when a UI press started
@@ -634,12 +639,15 @@ if (ticksG && labelsG && headingReadout && boat) {
         const portBtn = document.getElementById('port');
         const starboardBtn = document.getElementById('starboard');
 
+        function isRpiYawFresh() {
+          try { return (lastRpiYaw !== null) && (Date.now() - lastRpiYawTs < 2500); } catch(e){ return false; }
+        }
+
         function startHelm(direction) {
-          if (helmInterval) clearInterval(helmInterval);
-          helmInterval = setInterval(() => {
-            heading += direction * 2; // direction = -1 or +1
-            updateHeadingUI();
-          }, 50);
+          // Do NOT locally animate heading. Heading is authoritative from the RPi IMU (YAW_REL_DEG).
+          // Keep helmInterval cleared to avoid any visual movement from local actions.
+          if (helmInterval) { clearInterval(helmInterval); helmInterval = null; }
+          return;
         }
 
         function stopHelm() {
@@ -954,6 +962,22 @@ if (ticksG && labelsG && headingReadout && boat) {
                   // save update to storage
                   saveLastKnownToStorage();
                 }
+                // IMU yaw: accept top-level YAW_REL_DEG or nested IMU.YAW_REL_DEG
+                try {
+                  const yawVal = getField(msg, ['YAW_REL_DEG', 'yaw_rel_deg']);
+                  let imuYaw = undefined;
+                  if (typeof yawVal !== 'undefined' && yawVal !== null && yawVal !== '') imuYaw = Number(yawVal);
+                  else if (msg && msg.IMU && (typeof msg.IMU.YAW_REL_DEG !== 'undefined' || typeof msg.IMU.yaw_rel_deg !== 'undefined')) {
+                    imuYaw = Number(msg.IMU.YAW_REL_DEG || msg.IMU.yaw_rel_deg);
+                  }
+                  if (typeof imuYaw !== 'undefined' && !Number.isNaN(imuYaw)) {
+                    lastRpiYaw = imuYaw;
+                    lastRpiYawTs = Date.now();
+                    // Immediately reflect IMU heading in UI
+                    heading = imuYaw;
+                    try { updateHeadingUI(); } catch(e) {}
+                  }
+                } catch(e) { /* tolerant */ }
                 // Render CA temp from lastKnown if available
                 if (typeof lastKnown.ca_temp !== 'undefined' && lastKnown.ca_temp !== null && lastKnown.ca_temp !== '') {
                   const v = parseFloat(lastKnown.ca_temp);

@@ -810,9 +810,10 @@ body {
         <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3><p id="turbidity">--</p>
           <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
         </div> 
-        <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p>
+        <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (ppm)</h3>
+          <p id="ammonia">--</p>
           <small id="ammonia_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
-        </div> 
+        </div>
         <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div> 
         <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3><p id="temperature">--</p>
           <small id="temperature_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
@@ -1246,12 +1247,7 @@ function filterNotificationLogs() {
         <p>TEMPERATURE</p>
         <label class="st-switch"><input type="checkbox" id="st-sw-temp" onchange="ST_toggleSensor(this,'temp')"><span class="st-slider"></span></label>
       </div>
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-flask"></i></div>
-        <span class="st-dot st-off" id="st-dot-ammo"></span>
-        <p>AMMONIA</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-ammo" onchange="ST_toggleSensor(this,'ammo')"><span class="st-slider"></span></label>
-      </div>
+      <!-- Ammonia ST toggle removed per request -->
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-wind"></i></div>
         <span class="st-dot st-off" id="st-dot-do"></span>
@@ -1988,7 +1984,7 @@ async function fetchData() {
 /* Unified view: sensors and vessel actions are shown together; dropdown removed */
 
 /* Sensor toggle + persistence */
-const ST_SENSOR_KEYS = ['ph','turb','temp','ammo','do','load1','load2','ultra'];
+const ST_SENSOR_KEYS = ['ph','turb','temp','do','load1','load2','ultra'];
 function ST_toggleSensor(input, sensor) {
   const dot = document.getElementById("st-dot-"+sensor);
   const key = "st-sensor-"+sensor;
@@ -2333,7 +2329,7 @@ function ST_exportLogsPDF(){
 
 /* NEW: Turn All Sensors ON/OFF (bulk toggle by explicit state) */
 function ST_toggleAllSensors(state){
-  const keys=['ph','turb','temp','ammo','do','load1','load2','ultra'];
+  const keys=['ph','turb','temp','do','load1','load2','ultra'];
   keys.forEach(k=>{
     localStorage.setItem('st-sensor-'+k, state?'1':'0');
     const sw=document.getElementById('st-sw-'+k);
@@ -2346,7 +2342,7 @@ function ST_toggleAllSensors(state){
   try {
     const username = '<?php echo addslashes($_SESSION['username']); ?>';
     if (window.socket && window.socket.connected) {
-      window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','ammo','do','load1','load2','ultra'], value: state, user: username, role: 'ADMIN', ts: Date.now(), origin: 'local' });
+  window.socket.emit('sensors.bulk', { keys: ['ph','turb','temp','do','load1','load2','ultra'], value: state, user: username, role: 'ADMIN', ts: Date.now(), origin: 'local' });
     } else {
       const action = state ? 'turned ON all sensors' : 'turned OFF all sensors';
       ST_addLog('action', `[ADMIN] ${username} ${action}`);
@@ -2356,7 +2352,7 @@ function ST_toggleAllSensors(state){
 
 /* 🔵 MERGED: Single toggle button handler with auto label */
 function ST_allSensorsCurrentlyOn(){
-  const keys=['ph','turb','temp','ammo','do','load1','load2','ultra'];
+  const keys=['ph','turb','temp','do','load1','load2','ultra'];
   return keys.every(k => localStorage.getItem('st-sensor-'+k) === '1');
 }
 function ST_toggleAllSensorsToggle(){
@@ -2400,6 +2396,61 @@ function performLogout(){
     window.location.href='waveout.php';
   }
 }
+
+/* Inactivity auto-logout: 10 minutes idle -> show warning -> auto-logout */
+(function(){
+  const IDLE_MS = 10 * 60 * 1000; // 10 minutes
+  const WARNING_MS = 15 * 1000; // 15 seconds warning countdown
+  let idleTimer = null;
+  let warningTimer = null;
+  let countdownInterval = null;
+
+  function resetIdle(){
+    if(idleTimer) clearTimeout(idleTimer);
+    if(warningTimer){ clearTimeout(warningTimer); warningTimer = null; }
+    if(countdownInterval){ clearInterval(countdownInterval); countdownInterval = null; }
+    idleTimer = setTimeout(onIdle, IDLE_MS);
+  }
+
+  function onIdle(){
+    let secondsLeft = Math.floor(WARNING_MS / 1000);
+    Swal.fire({
+      title: 'Inactive',
+      html: 'You have been inactive. Logging out in <strong id="sw-count">'+secondsLeft+'</strong> seconds.',
+      icon: 'warning',
+      showCancelButton: false,
+      confirmButtonText: 'Stay signed in',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => {
+        const el = document.getElementById('sw-count');
+        countdownInterval = setInterval(() => {
+          secondsLeft--;
+          if(el) el.textContent = secondsLeft;
+        }, 1000);
+      }
+    }).then((result) => {
+      if(result.isConfirmed){
+        resetIdle();
+      } else {
+        window.location.href = 'waveout.php';
+      }
+    });
+
+    // Auto-logout after WARNING_MS if user doesn't interact
+    warningTimer = setTimeout(() => {
+      Swal.close();
+      window.location.href = 'waveout.php';
+    }, WARNING_MS);
+  }
+
+  ['mousemove','keydown','mousedown','touchstart','click','scroll'].forEach(evt => {
+    window.addEventListener(evt, resetIdle, true);
+  });
+
+  // start the idle timer
+  resetIdle();
+})();
 
 /* On Load: restore Tools states + logs and set initial behaviors */
 window.addEventListener('load', ()=>{

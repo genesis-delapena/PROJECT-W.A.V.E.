@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const PHP_LOG_ENDPOINT = process.env.PHP_LOG_ENDPOINT || 'http://localhost/wave_project/ad_dashboard.php';
 const SOCKET_SECRET = process.env.SOCKET_SECRET || 'dev_socket_secret_please_change';
+// Bridge endpoints for polling RPi server (Server_PC.py)
+const RPI_BRIDGE = process.env.RPI_BRIDGE || 'http://192.168.0.2:5000';
 
 const app = express();
 const server = http.createServer(app);
@@ -231,4 +233,56 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => console.log(`Realtime server running on http://0.0.0.0:${PORT}`));
+
+// Periodically poll the RPi bridge for latest sensor/IMU data and emit to connected clients
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 800); // ~800ms
+async function pollRpiBridge() {
+  try {
+    const resp = await axios.get(RPI_BRIDGE + '/get', { timeout: 1200 });
+    if (resp && resp.data && resp.data.message) {
+      const msg = resp.data.message || {};
+      // If the RPi bridge includes an IMU block or a YAW_REL_DEG key, normalize and emit
+      // Accept either msg.YAW_REL_DEG or msg.IMU && msg.IMU.YAW_REL_DEG
+      let yaw = null;
+      if (typeof msg.YAW_REL_DEG !== 'undefined') yaw = Number(msg.YAW_REL_DEG);
+      else if (msg.IMU && typeof msg.IMU.YAW_REL_DEG !== 'undefined') yaw = Number(msg.IMU.YAW_REL_DEG);
+      if (yaw !== null && !Number.isNaN(yaw)) {
+        // Emit a dedicated imu.update event so clients can react to YAW changes
+        io.emit('imu.update', { yaw_rel_deg: yaw, ts: Date.now(), raw: msg });
+      }
+      // Optionally emit the full sensor payload as sensor.bulk for UI convenience
+      io.emit('rpi.sensors', { message: msg, ts: Date.now() });
+    }
+  } catch (e) {
+    // non-fatal; log at debug level
+    if (process.env.DEBUG_RPI_POLL === '1') console.warn('RPI poll error', e.message || e);
+  } finally {
+    setTimeout(pollRpiBridge, POLL_INTERVAL_MS);
+  }
+}
+
+// Start polling after server is listening
+setTimeout(pollRpiBridge, 500);
+
+// Accept best-effort pushes from the Flask bridge (Server_PC.py)
+app.post('/rpi/push', express.json({ limit: '64kb' }), (req, res) => {
+  try {
+    const body = req.body || {};
+    const msg = body.message || body;
+    // If present, pull yaw
+    let yaw = null;
+    if (typeof msg === 'object') {
+      if (typeof msg.YAW_REL_DEG !== 'undefined') yaw = Number(msg.YAW_REL_DEG);
+      else if (msg.IMU && typeof msg.IMU.YAW_REL_DEG !== 'undefined') yaw = Number(msg.IMU.YAW_REL_DEG);
+    }
+    if (yaw !== null && !Number.isNaN(yaw)) {
+      io.emit('imu.update', { yaw_rel_deg: yaw, ts: Date.now(), raw: msg });
+    }
+    io.emit('rpi.sensors', { message: msg, ts: Date.now() });
+    res.json({ status: 'ok' });
+  } catch (e) {
+    console.warn('rpi.push handler error', e && e.message);
+    res.status(500).json({ status: 'error' });
+  }
+});
 

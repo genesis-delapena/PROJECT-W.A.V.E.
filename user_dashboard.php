@@ -277,6 +277,63 @@ function performLogout() {
 }
 </script>
 
+<!-- Inactivity auto-logout: 10 minutes idle -> show warning -> auto-logout -->
+<script>
+(function(){
+  const IDLE_MS = 10 * 60 * 1000; // 10 minutes
+  const WARNING_MS = 15 * 1000; // 15 seconds warning countdown
+  let idleTimer = null;
+  let warningTimer = null;
+  let countdownInterval = null;
+
+  function resetIdle(){
+    if(idleTimer) clearTimeout(idleTimer);
+    if(warningTimer){ clearTimeout(warningTimer); warningTimer = null; }
+    if(countdownInterval){ clearInterval(countdownInterval); countdownInterval = null; }
+    idleTimer = setTimeout(onIdle, IDLE_MS);
+  }
+
+  function onIdle(){
+    let secondsLeft = Math.floor(WARNING_MS / 1000);
+    Swal.fire({
+      title: 'Inactive',
+      html: 'You have been inactive. Logging out in <strong id="sw-count">'+secondsLeft+'</strong> seconds.',
+      icon: 'warning',
+      showCancelButton: false,
+      confirmButtonText: 'Stay signed in',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => {
+        const el = document.getElementById('sw-count');
+        countdownInterval = setInterval(() => {
+          secondsLeft--;
+          if(el) el.textContent = secondsLeft;
+        }, 1000);
+      }
+    }).then((result) => {
+      if(result.isConfirmed){
+        resetIdle();
+      } else {
+        window.location.href = 'waveout.php';
+      }
+    });
+
+    // Auto-logout after WARNING_MS if user doesn't interact
+    warningTimer = setTimeout(() => {
+      Swal.close();
+      window.location.href = 'waveout.php';
+    }, WARNING_MS);
+  }
+
+  ['mousemove','keydown','mousedown','touchstart','click','scroll'].forEach(evt => {
+    window.addEventListener(evt, resetIdle, true);
+  });
+
+  // start the idle timer
+  resetIdle();
+})();
+</script>
+
 <div class="main-navigation">
   <div class="nav-container">
     <button class="<?php echo ($current_tab === 'water') ? 'nav-item active' : 'nav-item'; ?>" data-tab="water"><span class="nav-icon"><i class="fas fa-water"></i></span> <span class="tab-label"><b>MONITORING</b></span> </button>
@@ -304,7 +361,9 @@ function performLogout() {
             <p id="turbidity">--</p>
             <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
           </div>
-          <div class="sensor-card" onclick="switchChart('AMMO')"><h3>Ammonia (mg/L)</h3><p id="ammonia">--</p>
+          <div class="sensor-card" onclick="switchChart('AMMO')">
+            <h3>Ammonia (ppm)</h3>
+            <p id="ammonia">--</p>
             <small id="ammonia_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
           </div>
           <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div>
@@ -539,11 +598,7 @@ function performLogout() {
           <p>TEMPERATURE</p>
           <label class="st-switch"><input type="checkbox" id="st-sw-temp" onchange="ST_toggleSensor(this,'temp')"><span class="st-slider"></span></label>
         </div>
-        <div class="st-card sensor-card">
-          <div class="st-icon sensor-icon"><i class="fas fa-flask"></i><span class="st-dot st-off" id="st-dot-ammo"></span></div>
-          <p>AMMONIA</p>
-          <label class="st-switch"><input type="checkbox" id="st-sw-ammo" onchange="ST_toggleSensor(this,'ammo')"><span class="st-slider"></span></label>
-        </div>
+        <!-- Ammonia toggle removed for user per request -->
         <div class="st-card sensor-card">
           <div class="st-icon sensor-icon"><i class="fas fa-wind"></i><span class="st-dot st-off" id="st-dot-do"></span></div>
           <p>DISSOLVED OXYGEN</p>
@@ -854,7 +909,7 @@ function rebootSystem(){
         try {
         // Define sensor keys consistent with admin
         if (typeof ST_SENSOR_KEYS === 'undefined' || !Array.isArray(ST_SENSOR_KEYS)) {
-          window.ST_SENSOR_KEYS = ['ph','turb','temp','ammo','do','load1','load2','ultra'];
+          window.ST_SENSOR_KEYS = ['ph','turb','temp','do','load1','load2','ultra'];
         }
 
         // Restore individual sensor switches from localStorage
@@ -914,7 +969,7 @@ function rebootSystem(){
               window.socket.emit('presence', { user: me, ts: Date.now(), origin: 'user' });
               // build sensors snapshot
               const sensors = {};
-              (window.ST_SENSOR_KEYS || ['ph','turb','temp','ammo','do','load1','load2','ultra']).forEach(k => {
+              (window.ST_SENSOR_KEYS || ['ph','turb','temp','do','load1','load2','ultra']).forEach(k => {
                 try { sensors[k] = (localStorage.getItem('st-sensor-' + k) === '1'); } catch(e) { sensors[k] = false; }
               });
               const payload = { user: me, ts: Date.now(), origin: 'user', vesselState: localStorage.getItem('vesselState') || 'OFF', sensors: sensors };
@@ -1314,10 +1369,14 @@ window.addEventListener('storage', function(e) {
     if (rawLK) {
       const lk = JSON.parse(rawLK);
       if (lk) {
-        try { if (lk.ammonia && document.getElementById('ammonia')) document.getElementById('ammonia').textContent = lk.ammonia; } catch(e){}
-        try { if (lk.ammonia_status && document.getElementById('ammonia_status')) document.getElementById('ammonia_status').textContent = lk.ammonia_status; } catch(e){}
-        try { if (lk.wqi && document.getElementById('wqiValue')) document.getElementById('wqiValue').textContent = String(lk.wqi); } catch(e){}
-        try { if (lk.wqi_status && document.getElementById('wqi_status')) document.getElementById('wqi_status').textContent = lk.wqi_status; } catch(e){}
+  try { if (lk.ammonia && document.getElementById('ammonia')) document.getElementById('ammonia').textContent = lk.ammonia; } catch(e){}
+  try { if (lk.ammonia_status && document.getElementById('ammonia_status')) document.getElementById('ammonia_status').textContent = lk.ammonia_status; } catch(e){}
+  try { if (lk.turbidity && document.getElementById('turbidity')) document.getElementById('turbidity').textContent = lk.turbidity; } catch(e){}
+  try { if (lk.turbidity_status && document.getElementById('turbidity_status')) document.getElementById('turbidity_status').textContent = lk.turbidity_status; } catch(e){}
+  try { if (lk.temperature && document.getElementById('temperature')) document.getElementById('temperature').textContent = lk.temperature; } catch(e){}
+  try { if (lk.temperature_status && document.getElementById('temperature_status')) document.getElementById('temperature_status').textContent = lk.temperature_status; } catch(e){}
+  try { if (lk.wqi && document.getElementById('wqiValue')) document.getElementById('wqiValue').textContent = String(lk.wqi); } catch(e){}
+  try { if (lk.wqi_status && document.getElementById('wqi_status')) document.getElementById('wqi_status').textContent = lk.wqi_status; } catch(e){}
       }
     }
   } catch(e) {}
