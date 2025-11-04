@@ -339,7 +339,7 @@ if (isset($_SESSION["LAR_level"])) {
     <div>
       <div class="sensor-box" id="sensors_controller">
         <h2>SENSORS</h2>
-        <p id="wqiDisplay" name="wqi_value">WQI: --</p>
+        <p style="margin:6px 0;">WQI: <span id="wqiValue">--</span></p>
         <p id="doDisplay" name="dissolve_sensor">DO (mg/L): --</p>
   <p id="turbidityDisplay" name="turbidity_sensor">Turbidity: --</p>
         <p id="ammoniaDisplay" name="ammonia_sensor">Ammonia (mg/L): --</p>
@@ -758,7 +758,9 @@ if (ticksG && labelsG && headingReadout && boat) {
   function renderFromLastKnown() {
     try {
       // Sensors
-      if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`;
+      if (typeof lastKnown.wqi !== 'undefined') {
+        const wEl = document.getElementById('wqiValue'); if (wEl) wEl.textContent = String(lastKnown.wqi);
+      }
       if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`;
       if (typeof lastKnown.turbidity !== 'undefined') {
         const tv = parseFloat(lastKnown.turbidity);
@@ -1022,7 +1024,65 @@ if (ticksG && labelsG && headingReadout && boat) {
                 // battery persistence removed
 
                 // Render sensor displays from lastKnown so values persist even if a message omits a field
-                try { if (typeof lastKnown.wqi !== 'undefined') document.getElementById('wqiDisplay').textContent = `WQI: ${lastKnown.wqi}`; } catch(e){}
+                try {
+                  // --- WQI rendering: prefer server-provided WQI, otherwise compute from available values (monitoring-tab logic) ---
+                  function parseNum(v){ if (v === null || typeof v === 'undefined' || v === '') return NaN; const n = Number(String(v).toString().trim()); return Number.isFinite(n) ? n : NaN; }
+                  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+                  function scorePH(pH){ if (!Number.isFinite(pH)) return null; const q = 100 - Math.abs(pH - 7) * 66.6666667; return clamp(Math.round(q * 10) / 10, 0, 100); }
+                  function scoreDO(d){ if (!Number.isFinite(d)) return null; const q = (d / 8) * 100; return clamp(Math.round(q * 10) / 10, 0, 100); }
+                  function scoreTurb(t){ if (!Number.isFinite(t)) return null; const q = 100 - (t / 25) * 100; return clamp(Math.round(q * 10) / 10, 0, 100); }
+                  function scoreNH3(nh3){ if (!Number.isFinite(nh3)) return null; const q = 100 - (nh3 / 0.5) * 100; return clamp(Math.round(q * 10) / 10, 0, 100); }
+                  function scoreTemp(t){ if (!Number.isFinite(t)) return null; const q = 100 - Math.abs(t - 25) * 2; return clamp(Math.round(q * 10) / 10, 0, 100); }
+                  function computeWQIFromValues(vals){ const weights = { PH:0.2, DO:0.3, TURB:0.2, AMMO:0.2, TEMP:0.1 }; const qi = {}; qi.PH = Number.isFinite(vals.PH) ? scorePH(vals.PH) : null; qi.DO = Number.isFinite(vals.DO) ? scoreDO(vals.DO) : null; qi.TURB = Number.isFinite(vals.TURB) ? scoreTurb(vals.TURB) : null; qi.AMMO = Number.isFinite(vals.AMMO) ? scoreNH3(vals.AMMO) : null; qi.TEMP = Number.isFinite(vals.TEMP) ? scoreTemp(vals.TEMP) : null; let weightedSum = 0; let weightSum = 0; Object.keys(weights).forEach(k => { if (qi[k] !== null && typeof qi[k] !== 'undefined') { weightedSum += qi[k] * weights[k]; weightSum += weights[k]; } }); if (weightSum <= 0) return null; return Math.round((weightedSum / weightSum) * 10) / 10; }
+                  function wqiStatusLabel(wqi){ if (!Number.isFinite(wqi)) return ''; if (wqi >= 90) return 'Excellent'; if (wqi >= 70) return 'Good'; if (wqi >= 50) return 'Medium'; if (wqi >= 25) return 'Poor'; return 'Very Poor'; }
+
+                  const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MG_L','DO_MG/L','DO_MG']);
+                  const phVal = getField(msg, ['PH','PH_LEVEL','pH']);
+                  const wqiServer = getField(msg, ['WQI','WQI_VALUE','WATER_QUALITY_INDEX','WATER_QUALITY']);
+
+                  const parsedDO = parseNum(doVal);
+                  const parsedPH = parseNum(phVal);
+                  const parsedTurb = parseNum(turb);
+                  const parsedTemp = parseNum(temp);
+                  const parsedAmmo = parseNum(ammo);
+
+                  let finalWqi = null;
+                  let finalWqiStatus = '';
+
+                  if (typeof wqiServer !== 'undefined' && wqiServer !== null && String(wqiServer).toString().trim() !== '') {
+                    const pv = parseNum(wqiServer);
+                    if (Number.isFinite(pv)) {
+                      finalWqi = Math.round(pv * 10) / 10;
+                      finalWqiStatus = wqiStatusLabel(finalWqi);
+                    }
+                  }
+
+                  if (finalWqi === null) {
+                    const lkRaw = localStorage.getItem('wave_lastKnown_v1');
+                    let lk = {};
+                    try { lk = lkRaw ? JSON.parse(lkRaw) : {}; } catch(e){ lk = {}; }
+                    const fallback = v => { const n = parseNum(v); return Number.isFinite(n) ? n : NaN; };
+                    const vals = {
+                      PH: Number.isFinite(parsedPH) ? parsedPH : fallback(lk.ph) || fallback(lk.PH) || NaN,
+                      DO: Number.isFinite(parsedDO) ? parsedDO : fallback(lk.do) || fallback(lk.DO) || NaN,
+                      TURB: Number.isFinite(parsedTurb) ? parsedTurb : fallback(lk.turbidity) || fallback(lk.TURB) || NaN,
+                      AMMO: Number.isFinite(parsedAmmo) ? parsedAmmo : (function(){ const a = lk && lk.ammonia ? Number(String(lk.ammonia).replace(/[^0-9\.\-]/g,'')) : NaN; return Number.isFinite(a)?a:NaN; })(),
+                      TEMP: Number.isFinite(parsedTemp) ? parsedTemp : fallback(lk.temperature) || fallback(lk.TEMP) || NaN
+                    };
+                    const computed = computeWQIFromValues(vals);
+                    if (Number.isFinite(computed)) {
+                      finalWqi = Math.round(computed * 10) / 10;
+                      finalWqiStatus = wqiStatusLabel(finalWqi);
+                    }
+                  }
+
+                  // render and persist into lastKnown
+                  const wqiEl = document.getElementById('wqiValue');
+                  if (wqiEl) {
+                    if (finalWqi === null || typeof finalWqi === 'undefined' || !Number.isFinite(finalWqi)) wqiEl.textContent = '--'; else wqiEl.textContent = (finalWqi).toFixed(1);
+                  }
+                  if (finalWqi !== null && Number.isFinite(finalWqi)) { lastKnown.wqi = (finalWqi).toFixed(1); saveLastKnownToStorage(); }
+                } catch(e) {}
                 try { if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`; } catch(e){}
                 try {
                   if (typeof lastKnown.turbidity !== 'undefined') {

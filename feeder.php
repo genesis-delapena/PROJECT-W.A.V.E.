@@ -245,6 +245,13 @@ session_start();
       text-shadow: 0 1px 2px rgba(0,0,0,0.08);
       transition: background 0.2s, box-shadow 0.2s;
     }
+  /* Status progress bar styles */
+  #feederStatusBar { display:flex; align-items:center; }
+  #feederStatusFill { width: 100%; height:100%; }
+  /* Percent label is centered above the fill so it remains visible even at 0% */
+  #feederStatusPercent { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2; color:#000; }
+  /* Default neutral background for the fill; JS will set gradient and width */
+  #feederStatusFill.default { background: linear-gradient(90deg, #00e676 0%, #00c853 100%); }
     .mode-controls {
       display: flex;
       flex-direction: row;
@@ -516,6 +523,11 @@ session_start();
   justify-content: flex-start;
   padding: 0;
 }
+/* Ensure dropdown list items are neutral; only the selected (closed/half/full) appearance is colored */
+#flowRateSelect option {
+  color: #222 !important;
+  background: #fff !important;
+}
   </style>
 </head>
 <body>
@@ -526,8 +538,23 @@ session_start();
           <div class="feed-container-label">Feed Container:</div>
           <div class="feed-container-row">
             <div class="feed-container-item">Remaining Feeds: <span id="feedRemaining">0</span>g</div>
-            <div class="feed-container-item">Flow Rate (g/s) : <span id="flowRate">85</span></div>
-            <div class="feed-container-item">Status: <span id="feederStatus" class="feed-status-value">ACTIVE</span></div>
+            <div class="feed-container-item">Flow Rate:
+              <select id="flowRateSelect" style="border:none;background:#f8fafc;padding:6px 10px;border-radius:8px;font-weight:bold;border:1.5px solid #b3b3b3;">
+                <option value="closed">Closed</option>
+                <option value="half">Half</option>
+                <option value="full">Full Open</option>
+              </select>
+            </div>
+            <div class="feed-container-item" style="display:flex;align-items:center;gap:12px;">
+              <div style="font-weight:bold;margin-right:6px;">Status:</div>
+              <div id="feederStatusBar" style="display:flex;align-items:center;gap:8px;">
+                <!-- Progress bar container (percent text is absolutely centered on top of fill) -->
+                <div style="position:relative;min-width:120px;max-width:260px;width:220px;height:34px;border-radius:20px;background:#f0f0f0;overflow:hidden;border:1px solid #e0e0e0;">
+                  <div id="feederStatusFill" style="position:absolute;left:0;top:0;height:100%;width:100%;z-index:1;transition:width 300ms ease, background 300ms ease;"></div>
+                  <span id="feederStatusPercent" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-weight:800;color:#000;letter-spacing:1px;">100%</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
               <div class="digital-clock-box" style="margin-left:auto;"><span id="digitalClock"></span></div>
@@ -545,13 +572,25 @@ session_start();
   function setFeederEnabled(enabled) {
     document.getElementById('manualAmount').disabled = !enabled;
     document.getElementById('dispenseBtn').disabled = !enabled;
-    const statusSpan = document.getElementById('feederStatus');
+    // Update the new progress-style status bar
+    const fill = document.getElementById('feederStatusFill');
+    const label = document.getElementById('feederStatusPercent');
+    const icon = document.getElementById('feederStatusIcon');
     if (enabled) {
-      statusSpan.textContent = 'ACTIVE';
-      statusSpan.style.background = 'linear-gradient(90deg, #00e676 0%, #00c853 100%)';
+      // restore based on current remaining feed
+      updateContainerStatus();
     } else {
-      statusSpan.textContent = 'INACTIVE';
-      statusSpan.style.background = 'linear-gradient(90deg, #bdbdbd 0%, #757575 100%)';
+      // show current percentage but desaturate the fill to indicate inactive state
+      updateContainerStatus();
+      if (fill) {
+        // keep width as percentage but make it gray
+        fill.style.background = 'linear-gradient(90deg,#e0e0e0 0%,#bdbdbd 100%)';
+      }
+      if (label) {
+        // keep percentage text visible and black
+        label.style.color = '#000';
+        label.style.fontWeight = '800';
+      }
     }
   }
 
@@ -571,6 +610,50 @@ session_start();
   // Check vessel status every 5 seconds
   setInterval(fetchVesselStatus, 5000);
   fetchVesselStatus();
+  
+  // --- FLOW RATE MODE (Closed / Half / Full Open) - make select the single visual control ---
+  function updateFlowRateAppearance() {
+    try {
+      const sel = document.getElementById('flowRateSelect');
+      if (!sel) return;
+      const mode = localStorage.getItem('flowRateMode') || 'full';
+      sel.value = mode;
+      // update select appearance (text color and border) to reflect state
+      if (mode === 'closed') {
+        sel.style.color = '#e53935';
+        sel.style.borderColor = '#e57373';
+        sel.style.background = '#fff5f5';
+      } else if (mode === 'half') {
+        sel.style.color = '#ffb300';
+        sel.style.borderColor = '#ffd54f';
+        sel.style.background = '#fffaf0';
+      } else {
+        sel.style.color = '#00c853';
+        sel.style.borderColor = '#81c784';
+        sel.style.background = '#f3fff6';
+      }
+    } catch (e) { console.warn('flow appearance update failed', e); }
+  }
+
+  function initFlowRateControl() {
+    try {
+      const sel = document.getElementById('flowRateSelect');
+      if (!sel) return;
+      // Load saved value and apply appearance
+      const saved = localStorage.getItem('flowRateMode') || 'full';
+      sel.value = saved;
+      updateFlowRateAppearance();
+      sel.addEventListener('change', function () {
+        const v = this.value;
+        localStorage.setItem('flowRateMode', v);
+        updateFlowRateAppearance();
+        // Optionally send to server/hardware endpoint here. Example (commented):
+        // fetch('set_flow_mode.php', { method: 'POST', body: JSON.stringify({mode:v}), headers:{'Content-Type':'application/json'} });
+      });
+    } catch (e) { console.warn('init flow control failed', e); }
+  }
+  // Initialize flow rate control on load
+  initFlowRateControl();
   </script>
           </div>
           <div id="nextDispense"></div>
@@ -882,7 +965,7 @@ function manualDispense() {
   if (amount > MAX_AMOUNT) { alert('Maximum allowed is 5000g!'); return; }
   if (feedRemaining - amount < 0) {
     logDispense(amount, feedRemaining, 'failed');
-    Swal.fire('Empty!', 'The feed container is empty. Please refill.', 'error');
+    Swal.fire('Error!', 'The amount exceeds available feed.', 'error');
     return;
   }
   feedRemaining -= amount;
@@ -897,11 +980,45 @@ function manualDispense() {
 function updateContainerStatus() {
   document.getElementById("feedRemaining").textContent = feedRemaining;
   localStorage.setItem('feedRemaining', feedRemaining);
+  // compute percentage based on containerCapacity
+  let percent = 0;
+  try {
+    percent = containerCapacity > 0 ? (feedRemaining / containerCapacity) * 100 : 0;
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+  } catch (e) { percent = 0; }
+  // update status bar appearance
+  updateStatusBar(percent);
   if (feedRemaining <= 0) {
     feedRemaining = 0;
     localStorage.setItem('feedRemaining', feedRemaining);
     Swal.fire('Empty!', 'The feed container is empty. Please refill.', 'error');
   }
+}
+
+// Update the status progress bar (fill width, gradient, and percent text)
+function updateStatusBar(percent) {
+  const fill = document.getElementById('feederStatusFill');
+  const percentLabel = document.getElementById('feederStatusPercent');
+  if (!fill || !percentLabel) return;
+  const pct = Math.round(percent);
+  // set width (can be 0%)
+  fill.style.width = pct + '%';
+  // choose gradient by thresholds
+  if (pct <= 20) {
+    // red
+    fill.style.background = 'linear-gradient(90deg,#ff6b6b 0%,#e53935 100%)';
+  } else if (pct <= 60) {
+    // amber
+    fill.style.background = 'linear-gradient(90deg,#ffd54f 0%,#ffb300 100%)';
+  } else {
+    // green
+    fill.style.background = 'linear-gradient(90deg,#66ffa6 0%,#00c853 100%)';
+  }
+  // set label (always a percent, never replaced by INACTIVE)
+  percentLabel.textContent = pct + '%';
+  // ensure color is black and centered above the fill
+  percentLabel.style.color = '#000';
 }
 
 function logDispense(amount, percent, status, note, modeOverride) {

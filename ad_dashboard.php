@@ -1410,10 +1410,52 @@ document.getElementById("userForm").addEventListener("submit", function(e){
 const navButtons = document.querySelectorAll(".nav-item[data-tab]");
 let pollTimer = null;
 let chartReady = false;
+let chartBackgroundTimer = null;
+
+// Background poller: when Monitoring UI is not active we still poll lightly
+// and append ticks to the persisted chart history so the chart doesn't reset
+// when the user navigates away or refreshes the page.
+async function chartBackgroundTick() {
+  try {
+    const wrapper = await robustFetchJson();
+    if (wrapper && typeof wrapper.message === 'object') {
+      const s = wrapper.message;
+      const turbRaw = s.TURB ?? s.turb ?? s.TURBIDITY ?? s.turbidity ?? s.NTU_VALUE ?? s.ntu_value;
+      const tempRaw = s.TEMP ?? s.temp ?? s.TEMP_C ?? s.temp_c ?? s.IMU_TEMP_C ?? s.imu_temp_c;
+      const ammoRaw = s.AMMO ?? s.ammo ?? s.NH3_PPM ?? s.NH3_PPM_VALUE ?? s.nh3_ppm ?? s.NH3_PPM_VALUE;
+      const data = {
+        WQI:  safeNumberOrNull(s.WQI  ?? s.wqi),
+        PH:   safeNumberOrNull(s.PH   ?? s.pH),
+        TURB: safeNumberOrNull(turbRaw ?? s.TURB ?? s.turb),
+        TEMP: safeNumberOrNull(tempRaw ?? s.TEMP ?? s.temp),
+        AMMO: safeNumberOrNull(ammoRaw ?? s.AMMO ?? s.ammo),
+        DO:   safeNumberOrNull(s.DO   ?? s.do)
+      };
+      appendChartTick(data);
+      // persist a minimal lastUpdated so restore shows recency
+      try { const store = loadChartHistory() || {}; store.lastUpdated = s.last_updated || s.updated || Date.now(); saveChartHistory(store); } catch(e){}
+    }
+  } catch (e) { /* ignore background poll errors */ }
+}
+function startBackgroundChartPoll() {
+  if (chartBackgroundTimer) return;
+  // Run immediately then every 2s
+  chartBackgroundTick();
+  chartBackgroundTimer = setInterval(()=>{ chartBackgroundTick().catch(()=>{}); }, 2000);
+}
+function stopBackgroundChartPoll() {
+  if (!chartBackgroundTimer) return;
+  clearInterval(chartBackgroundTimer);
+  chartBackgroundTimer = null;
+}
 
 function startMonitoring() {
   if (pollTimer) return;
+  // When the full monitoring UI is active, stop the lightweight background poller
+  stopBackgroundChartPoll();
   const hint = document.getElementById('perfHint'); if (hint) hint.style.display = 'none';
+  // Restore persisted chart history into the live chart so it shows recent ticks collected while away
+  try { restoreChartToLive(); } catch(e) {}
   fetchData(); // immediate hit
   pollTimer = setInterval(fetchData, 2000);
 }
@@ -1424,6 +1466,8 @@ function stopMonitoring() {
     const hint = document.getElementById('perfHint');
     if (hint) hint.style.display = 'inline-block';
   }
+  // When the monitoring UI is not active, keep collecting chart ticks in background
+  startBackgroundChartPoll();
 }
 
 function navSwitchTo(tab){
@@ -1610,6 +1654,8 @@ function setupChart(sensorKey){
     plugins: [lastValueLabelPlugin]
   });
   chartReady = true;
+  // If we have persisted history, restore it into the fresh Chart instance
+  try { restoreChartToLive(); } catch(e) { /* ignore restore errors */ }
 }
 function switchChart(sensorKey){ activeSensor = sensorKey; setupChart(sensorKey); }
 
@@ -1638,6 +1684,8 @@ async function robustFetchJson() {
   return await r2.json();
 }
 function safeNumber(x, def=0){ const n = Number(x); return Number.isFinite(n) ? n : def; }
+// Return null when value is missing or not a finite number (avoid defaulting to 0)
+function safeNumberOrNull(x){ const n = Number(x); return Number.isFinite(n) ? n : null; }
 function formatTimestamp(ts) {
   const d = ts ? new Date(ts) : new Date();
   if (isNaN(d)) return "--";
@@ -1759,10 +1807,75 @@ function renderFromLastKnown(){
 // Load persisted values immediately so the page shows them while waiting for first fetch
 loadLastKnownFromStorage();
 renderFromLastKnown();
+
+// --- Chart persistence helpers ---
+const CHART_STORE_KEY = 'wave_monitor_chart_v1';
+function loadChartHistory() {
+  try {
+    const raw = localStorage.getItem(CHART_STORE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+function saveChartHistory(state) {
+  try { localStorage.setItem(CHART_STORE_KEY, JSON.stringify(state)); } catch (e) { /* noop */ }
+}
+
+function appendChartTick(values) {
+  // values: { WQI, PH, TURB, TEMP, AMMO, DO } - numeric or null
+  try {
+    const now = Date.now();
+    const stored = loadChartHistory() || { labels: [], datasets: {} , lastUpdated: now };
+    // push shared timeline label (empty string to keep compact)
+    stored.labels.push('');
+    Object.keys(sensorConfig).forEach(k => {
+      if (!stored.datasets[k]) stored.datasets[k] = [];
+        let v = null;
+        if (typeof values[k] !== 'undefined' && values[k] !== null && values[k] !== '') {
+          const n = Number(values[k]); v = Number.isFinite(n) ? n : values[k];
+        } else {
+          // Fallback: use lastKnown persisted value if available (prefer numeric)
+          try {
+            if (typeof lastKnown[k] !== 'undefined' && lastKnown[k] !== null && lastKnown[k] !== '') {
+              const lk = Number(lastKnown[k]); if (Number.isFinite(lk)) v = lk; else v = lastKnown[k];
+            } else {
+              // Otherwise repeat the last stored point for smoothness
+              const arr = stored.datasets[k];
+              if (arr && arr.length > 0) {
+                const last = arr[arr.length - 1];
+                if (typeof last !== 'undefined' && last !== null) v = last;
+              }
+            }
+          } catch (e) {
+            /* ignore fallback errors */
+          }
+        }
+      stored.datasets[k].push(v);
+      if (stored.datasets[k].length > maxPoints) stored.datasets[k].shift();
+    });
+    if (stored.labels.length > maxPoints) stored.labels.shift();
+    stored.lastUpdated = now;
+    saveChartHistory(stored);
+  } catch (e) { /* ignore persistence errors */ }
+}
+
+function restoreChartToLive() {
+  try {
+    const st = loadChartHistory();
+    if (!st || !liveChart) return;
+    liveChart.data.labels = st.labels.slice();
+    Object.keys(sensorConfig).forEach((k, idx) => {
+      const arr = (st.datasets && st.datasets[k]) ? st.datasets[k].slice() : [];
+      liveChart.data.datasets[idx].data = arr.slice(-maxPoints);
+    });
+    liveChart.update('none');
+  } catch (e) { /* ignore restore errors */ }
+}
+
 async function fetchData() {
-  // If chart not ready or Monitoring tab not active, skip to reduce jank
+  // Fetch every tick but only update the visible chart/UI when monitoring tab is active.
   const active = document.querySelector(".nav-item.active")?.dataset.tab;
-  if (active !== 'water' || !chartReady) return;
+  const shouldUpdateUI = (active === 'water' && chartReady);
 
   try {
     const wrapper = await robustFetchJson();
@@ -1774,12 +1887,12 @@ async function fetchData() {
   const ammoRaw = s.AMMO ?? s.ammo ?? s.NH3_PPM ?? s.NH3_PPM_VALUE ?? s.nh3_ppm ?? s.NH3_PPM_VALUE;
 
       const data = {
-        WQI:  safeNumber(s.WQI  ?? s.wqi),
-        PH:   safeNumber(s.PH   ?? s.pH),
-        TURB: safeNumber(turbRaw ?? s.TURB ?? s.turb),
-        TEMP: safeNumber(tempRaw ?? s.TEMP ?? s.temp),
-        AMMO: safeNumber(ammoRaw ?? s.AMMO ?? s.ammo),
-        DO:   safeNumber(s.DO   ?? s.do)
+        WQI:  safeNumberOrNull(s.WQI  ?? s.wqi),
+        PH:   safeNumberOrNull(s.PH   ?? s.pH),
+        TURB: safeNumberOrNull(turbRaw ?? s.TURB ?? s.turb),
+        TEMP: safeNumberOrNull(tempRaw ?? s.TEMP ?? s.temp),
+        AMMO: safeNumberOrNull(ammoRaw ?? s.AMMO ?? s.ammo),
+        DO:   safeNumberOrNull(s.DO   ?? s.do)
       };
 
       // Show fresh values when present; otherwise use lastKnown values to avoid falling back to zeros
@@ -1946,33 +2059,39 @@ async function fetchData() {
         DO:   present(s.DO ?? s.do)
       };
 
-      // Push a label for this tick (shared timeline)
-      liveChart.data.labels.push('');
+      // Always append this tick to the persisted chart history so it survives navigation/refresh
+      appendChartTick(data);
 
-      // For each sensor dataset, pick the fresh value if present otherwise lastKnown fallback
-      Object.keys(sensorConfig).forEach((key, idx) => {
-        let val = data[key];
-        if (!presentMap[key] && typeof lastKnown[key] !== 'undefined') val = lastKnown[key];
-        // Ensure numeric types remain numeric where possible
-        const n = Number(val);
-        const pushVal = Number.isFinite(n) ? n : val;
-        // Push to the dataset matching this key (datasets created in same order)
-        const ds = liveChart.data.datasets[idx];
-        if (!ds) return;
-        ds.data.push(pushVal);
-        if (ds.data.length > maxPoints) ds.data.shift();
-      });
+      // If the monitoring UI is active, also render into the live Chart.js instance
+      if (shouldUpdateUI && liveChart) {
+        // Push a label for this tick (shared timeline)
+        liveChart.data.labels.push('');
 
-      // Trim labels if needed
-      if (liveChart.data.labels.length > maxPoints) liveChart.data.labels.shift();
+        // For each sensor dataset, pick the fresh value if present otherwise lastKnown fallback
+        Object.keys(sensorConfig).forEach((key, idx) => {
+          let val = data[key];
+          if (!presentMap[key] && typeof lastKnown[key] !== 'undefined') val = lastKnown[key];
+          // Ensure numeric types remain numeric where possible
+          const n = Number(val);
+          const pushVal = Number.isFinite(n) ? n : val;
+          // Push to the dataset matching this key (datasets created in same order)
+          const ds = liveChart.data.datasets[idx];
+          if (!ds) return;
+          ds.data.push(pushVal);
+          if (ds.data.length > maxPoints) ds.data.shift();
+        });
 
-      // Update y axis to active sensor's config and refresh chart
-      const conf = sensorConfig[activeSensor];
-      liveChart.options.scales.y.max = conf.max;
-      liveChart.options.scales.y.ticks.stepSize = (conf.max <= 1) ? 0.1 : Math.max(1, Math.round(conf.max/5));
-      // Ensure only the active dataset is visible
-      liveChart.data.datasets.forEach(d => { d.hidden = (d.label !== conf.label); });
-      liveChart.update('none');
+        // Trim labels if needed
+        if (liveChart.data.labels.length > maxPoints) liveChart.data.labels.shift();
+
+        // Update y axis to active sensor's config and refresh chart
+        const conf = sensorConfig[activeSensor];
+        liveChart.options.scales.y.max = conf.max;
+        liveChart.options.scales.y.ticks.stepSize = (conf.max <= 1) ? 0.1 : Math.max(1, Math.round(conf.max/5));
+        // Ensure only the active dataset is visible
+        liveChart.data.datasets.forEach(d => { d.hidden = (d.label !== conf.label); });
+        liveChart.update('none');
+      }
     }
   } catch (err) { }
 }
