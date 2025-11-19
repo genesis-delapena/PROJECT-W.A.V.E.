@@ -81,11 +81,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["verify"])) {
   $stmt = $conn->prepare("SELECT id, otp_code, expiry FROM admin_otps WHERE username=? ORDER BY created_at DESC LIMIT 1");
   $stmt->bind_param("s", $user);
   $stmt->execute();
-  $stmt->bind_result($dbId, $dbOtp, $dbExpiry);
-  $stmt->fetch();
+  // make num_rows available and handle the no-row case gracefully
+  $stmt->store_result();
+  if ($stmt->num_rows > 0) {
+    $stmt->bind_result($dbId, $dbOtp, $dbExpiry);
+    $stmt->fetch();
+  } else {
+    $dbId = $dbOtp = $dbExpiry = null;
+  }
   $stmt->close();
 
-    if ($otp === $dbOtp && strtotime($dbExpiry) > time()) {
+    // Compare OTPs permissively (string comparison) and ensure expiry is a valid future timestamp
+    $otpMatch = (isset($dbOtp) && (string)$otp === (string)$dbOtp);
+    $expiryOk = (!empty($dbExpiry) && @strtotime($dbExpiry) > time());
+    if ($otpMatch && $expiryOk) {
   // Mark the used OTP as expired (do not delete row so history remains)
   $clear = $conn->prepare("UPDATE admin_otps SET expiry=? WHERE id=?");
   $now = date("Y-m-d H:i:s");

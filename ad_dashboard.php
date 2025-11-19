@@ -1210,8 +1210,9 @@ function filterNotificationLogs() {
       <button class="st-btn st-diag st-pill" id="toggleAllBtn" onclick="ST_toggleAllSensorsToggle()">Turn ALL ON</button>
     </div>
     <!-- Vessel actions placed at the far right edge of the viewport (fixed) on wide screens -->
-  <div class="top-right-actions" style="position:fixed; top:140px; right:18px; display:flex; gap:10px; align-items:center; z-index:9999;">
+    <div class="top-right-actions" style="position:fixed; top:140px; right:18px; display:flex; gap:10px; align-items:center; z-index:9999;">
       <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
+      <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
       <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
     </div>
 
@@ -2961,6 +2962,31 @@ window.addEventListener('load', ()=>{
   sessionPollInterval = setInterval(checkSessionOnce, 3000);
   checkSessionOnce();
 })();
+</script>
+<script>
+// Run FA_Code_Generator_GUI.py via server endpoint
+async function runFA(){
+  const btn = document.getElementById('runFaBtn');
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting...'; }
+    const resp = await fetch('run_fagui.php', { method: 'POST', credentials: 'same-origin' });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error('Server error: ' + resp.status + ' ' + txt);
+    }
+    const j = await resp.json();
+    if (j.success) {
+      Swal.fire('Started', j.message || 'FA script started', 'success');
+      try { ST_addLog('info', `[ADMIN] ${'<?php echo addslashes($_SESSION['username']); ?>'} started FA_Code_Generator_GUI.py`); } catch(e){}
+    } else {
+      Swal.fire('Error', j.message || 'Failed to start FA script', 'error');
+    }
+  } catch (err) {
+    Swal.fire('Error', err.message || 'Failed to start FA script', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate 2FA Code'; }
+  }
+}
 </script>
 </body>
 </html>
