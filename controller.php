@@ -964,19 +964,46 @@ if (ticksG && labelsG && headingReadout && boat) {
                   // save update to storage
                   saveLastKnownToStorage();
                 }
-                // IMU yaw: accept top-level YAW_REL_DEG or nested IMU.YAW_REL_DEG
+                // IMU / Fusion heading: accept many common keys from the RPi message
                 try {
-                  const yawVal = getField(msg, ['YAW_REL_DEG', 'yaw_rel_deg']);
-                  let imuYaw = undefined;
-                  if (typeof yawVal !== 'undefined' && yawVal !== null && yawVal !== '') imuYaw = Number(yawVal);
-                  else if (msg && msg.IMU && (typeof msg.IMU.YAW_REL_DEG !== 'undefined' || typeof msg.IMU.yaw_rel_deg !== 'undefined')) {
-                    imuYaw = Number(msg.IMU.YAW_REL_DEG || msg.IMU.yaw_rel_deg);
+                  // prefer explicit yaw keys
+                  const headingCandidates = ['YAW_REL_DEG','yaw_rel_deg','HEADING_FUSED_DEG','HEADING_FUSED','HEADING_DEG','HEADING','heading_fused_deg','heading_fused'];
+                  let found = undefined;
+                  for (const k of headingCandidates) {
+                    const v = getField(msg, [k]);
+                    if (typeof v !== 'undefined' && v !== null && String(v).toString().trim() !== '') { found = v; break; }
                   }
-                  if (typeof imuYaw !== 'undefined' && !Number.isNaN(imuYaw)) {
+
+                  // also check nested containers often used by different producers
+                  if (typeof found === 'undefined' && msg) {
+                    const containers = ['IMU','FUSION','FUSION_KF','FUSIONKF'];
+                    for (const c of containers) {
+                      if (msg[c]) {
+                        for (const k of headingCandidates) {
+                          if (typeof msg[c][k] !== 'undefined' && msg[c][k] !== null && String(msg[c][k]).trim() !== '') { found = msg[c][k]; break; }
+                        }
+                        if (typeof found !== 'undefined') break;
+                      }
+                    }
+                  }
+
+                  // helper to sanitize numeric values (strip degree symbol and other noise)
+                  function parseHeadingRaw(x) {
+                    if (typeof x === 'number') return x;
+                    if (typeof x !== 'string') x = String(x);
+                    x = x.replace(/[^0-9+\-\.]/g, '');
+                    if (x === '' || x === null) return NaN;
+                    return Number(x);
+                  }
+
+                  const imuYaw = (typeof found !== 'undefined') ? parseHeadingRaw(found) : NaN;
+                  if (!Number.isNaN(imuYaw)) {
                     lastRpiYaw = imuYaw;
                     lastRpiYawTs = Date.now();
-                    // Immediately reflect IMU heading in UI
+                    // Immediately reflect IMU heading in UI (heading uses degrees, 0-360)
                     heading = imuYaw;
+                    // persist a canonical heading value so other logic can reuse it
+                    try { lastKnown.heading = imuYaw; saveLastKnownToStorage(); } catch(e){}
                     try { updateHeadingUI(); } catch(e) {}
                   }
                 } catch(e) { /* tolerant */ }
