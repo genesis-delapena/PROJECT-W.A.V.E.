@@ -25,7 +25,8 @@ DB_CONFIG = {
 }
 
 ENCRYPTED_FILENAME = "encrypted_ufa_code.bin"
-USB_LABEL = "UFA_Code"
+# Expected exact volume label of the authorized USB (case-insensitive)
+USB_LABEL = "UFA_CODE"
 
 TIME_WEEK = 7 * 24 * 60 * 60
 TIME_MONTH = 30 * 24 * 60 * 60
@@ -73,10 +74,42 @@ def aes_encrypt(data, key, iv):
 def generate_factor_code():
     return ''.join(random.choices(string.digits, k=6)), time.time()
 
-def find_usb_drive(label):
+def _get_volume_label_windows(path):
+    try:
+        import ctypes
+        # buffers for volume name and filesystem name
+        volname_buf = ctypes.create_unicode_buffer(1024)
+        fsname_buf = ctypes.create_unicode_buffer(1024)
+        res = ctypes.windll.kernel32.GetVolumeInformationW(
+            ctypes.c_wchar_p(path), volname_buf, ctypes.sizeof(volname_buf), None, None, None, fsname_buf, ctypes.sizeof(fsname_buf)
+        )
+        if res:
+            return volname_buf.value
+    except Exception:
+        pass
+    return None
+
+def find_usb_drive(expected_label=None):
+    """
+    Find a mounted drive whose volume label matches `expected_label` (case-insensitive).
+    On Windows this uses GetVolumeInformation to read the volume label. On other
+    platforms it falls back to matching the mountpoint name containing the label.
+    """
+    expected = (expected_label or '').strip().casefold()
     for p in psutil.disk_partitions(all=False):
-        if 'removable' in p.opts.lower() or 'media' in p.mountpoint.lower():
-            return p.mountpoint
+        # Try Windows-specific volume label check first
+        try:
+            if os.name == 'nt':
+                vol = _get_volume_label_windows(p.mountpoint)
+                if vol and vol.strip().casefold() == expected and expected != '':
+                    return p.mountpoint
+            else:
+                # On Unix-like systems, check last path component (e.g., /media/USER/UFA_CODE)
+                tail = os.path.basename(os.path.normpath(p.mountpoint)).casefold()
+                if expected != '' and expected == tail:
+                    return p.mountpoint
+        except Exception:
+            continue
     return None
 
 # -------------------- GUI IMPLEMENTATION --------------------
@@ -160,24 +193,25 @@ class FACodeGUI:
         encrypted = aes_encrypt(json.dumps(code_data).encode(), key, iv)
         file_data = salt + iv + encrypted
 
-        with open(ENCRYPTED_FILENAME, "wb") as f:
-            f.write(file_data)
-
-        self.log(f"Saved encrypted file: {ENCRYPTED_FILENAME}")
-
-        # 4. USB copy
+        # Write encrypted file directly to USB only (do NOT save locally)
         usb = find_usb_drive(USB_LABEL)
-        if usb:
-            dest = os.path.join(usb, ENCRYPTED_FILENAME)
-            try:
-                shutil.copyfile(ENCRYPTED_FILENAME, dest)
-                self.log(f"Copied to USB: {dest}")
-            except Exception as e:
-                self.log(f"USB Copy Error: {e}")
-        else:
-            self.log("No USB detected. Skipped USB copy.")
+        if not usb:
+            self.log("No USB detected. Authentication file was NOT saved.")
+            messagebox.showerror("USB Missing", "No USB drive detected. Please insert the USB drive and try again.")
+            return
 
-        messagebox.showinfo("Success", "Authentication Code Generated Successfully!")
+        dest = os.path.join(usb, ENCRYPTED_FILENAME)
+        try:
+            # write directly to the USB destination
+            with open(dest, "wb") as f:
+                f.write(file_data)
+            self.log(f"Copied to USB: {dest}")
+        except Exception as e:
+            self.log(f"USB Write Error: {e}")
+            messagebox.showerror("Write Error", f"Failed to write file to USB: {e}")
+            return
+
+        messagebox.showinfo("Success", f"Authentication Code Generated and saved to USB:\n{dest}")
 
 # -------------------- RUN GUI --------------------
 if __name__ == "__main__":
