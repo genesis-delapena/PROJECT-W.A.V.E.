@@ -616,8 +616,9 @@ session_start();
     try {
       const sel = document.getElementById('flowRateSelect');
       if (!sel) return;
-      const mode = localStorage.getItem('flowRateMode') || 'full';
-      sel.value = mode;
+      // Do not overwrite the currently selected value here; use provided value or fallbacks
+      const rawMode = (arguments.length > 0 && typeof arguments[0] === 'string') ? arguments[0] : (localStorage.getItem('flowRateMode') || sel.value || 'full');
+      const mode = String(rawMode || '').toLowerCase().trim();
       // update select appearance (text color and border) to reflect state
       if (mode === 'closed') {
         sel.style.color = '#e53935';
@@ -635,22 +636,127 @@ session_start();
     } catch (e) { console.warn('flow appearance update failed', e); }
   }
 
+  // Map flow mode to the command string expected by the RPi via PC
+  async function sendFlowCommand(mode) {
+    try {
+      const mapping = {
+        'closed': '14:VALVE:180',
+        'half':   '14:VALVE:146',
+        'full':   '14:VALVE:90',
+        // fallback values for possible option labels
+        'full open': '14:VALVE:90'
+      };
+      const key = (mode || '').toLowerCase();
+      const cmd = mapping[key] || mapping['full'];
+      const payload = JSON.stringify({ message: cmd });
+
+      // Try same-origin proxy first (avoids CORS/network issues)
+      const proxyUrl = 'ad_dashboard.php?api=send_flow';
+      try {
+        const r = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+        if (r.ok) {
+          try { Swal.fire({ toast: true, position: 'top-end', timer: 1400, showConfirmButton: false, icon: 'success', title: 'Flow command sent (proxy)' }); } catch (e) {}
+          console.log('[FEEDER] Sent via proxy:', cmd);
+          return true;
+        } else {
+          console.warn('Proxy responded non-ok', r.status);
+          try { const txt = await r.text(); console.warn('proxy body:', txt); } catch (e) {}
+        }
+      } catch (e) {
+        console.warn('Proxy fetch failed, will try direct Flask', e);
+      }
+
+      // Fallback: direct POST to Flask server
+      const FLASK_SEND = 'http://192.168.0.2:5000/send_from_pc';
+      const res = await fetch(FLASK_SEND, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload
+      });
+      if (!res.ok) {
+        console.warn('sendFlowCommand: direct non-ok response', res.status);
+        try { const text = await res.text(); console.warn('body:', text); } catch(e){}
+        Swal.fire({ icon: 'error', title: 'Command Failed', text: 'Could not send command to PC server.' });
+        return false;
+      }
+      try { Swal.fire({ toast: true, position: 'top-end', timer: 1400, showConfirmButton: false, icon: 'success', title: 'Flow command sent' }); } catch (e) {}
+      console.log('[FEEDER] Sent PC→RPi command (direct):', cmd);
+      return true;
+    } catch (e) {
+      console.warn('sendFlowCommand error', e);
+      try { Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to send flow command.' }); } catch (e) {}
+      return false;
+    }
+  }
+
+  // Generic helper to send arbitrary PC->RPi commands using proxy then fallback
+  async function sendPCCommand(cmd) {
+    try {
+      const payload = JSON.stringify({ message: cmd });
+      // try proxy first
+      const proxyUrl = 'ad_dashboard.php?api=send_flow';
+      try {
+        const pr = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+        if (pr.ok) {
+          console.log('[FEEDER] sendPCCommand via proxy:', cmd);
+          return true;
+        } else {
+          console.warn('sendPCCommand proxy non-ok', pr.status);
+        }
+      } catch (e) {
+        console.warn('sendPCCommand proxy failed', e);
+      }
+      // fallback direct
+      const FLASK_SEND = 'http://192.168.0.2:5000/send_from_pc';
+      const res = await fetch(FLASK_SEND, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+      if (!res.ok) {
+        console.warn('sendPCCommand direct non-ok', res.status);
+        return false;
+      }
+      console.log('[FEEDER] sendPCCommand direct:', cmd);
+      return true;
+    } catch (e) {
+      console.warn('sendPCCommand error', e);
+      return false;
+    }
+  }
+
   function initFlowRateControl() {
     try {
       const sel = document.getElementById('flowRateSelect');
       if (!sel) return;
       // Load saved value and apply appearance
       const saved = localStorage.getItem('flowRateMode') || 'full';
-      sel.value = saved;
-      updateFlowRateAppearance();
-      sel.addEventListener('change', function () {
-        const v = this.value;
+      const savedNorm = String(saved || '').toLowerCase().trim();
+      // If saved value matches an option, set it; otherwise default to 'full'
+      const optionExists = Array.from(sel.options).some(o => String(o.value || '').toLowerCase().trim() === savedNorm);
+      sel.value = optionExists ? savedNorm : 'full';
+      updateFlowRateAppearance(savedNorm);
+      // Use onchange to prevent duplicate listeners; replace any existing handler
+      sel.onchange = function () {
+        const v = String(this.value || '').toLowerCase().trim();
         localStorage.setItem('flowRateMode', v);
-        updateFlowRateAppearance();
-        // Optionally send to server/hardware endpoint here. Example (commented):
-        // fetch('set_flow_mode.php', { method: 'POST', body: JSON.stringify({mode:v}), headers:{'Content-Type':'application/json'} });
-      });
+        updateFlowRateAppearance(v);
+        updateDispenseButtonState(v);
+        // NOTE: Do NOT send valve command on change — valve will be activated when Dispense is pressed
+      };
+      // Do not send the valve command on init; only update button state
+      updateDispenseButtonState(savedNorm);
     } catch (e) { console.warn('init flow control failed', e); }
+  }
+
+  function updateDispenseButtonState(mode) {
+    try {
+      const v = String(mode || localStorage.getItem('flowRateMode') || document.getElementById('flowRateSelect')?.value || '').toLowerCase().trim();
+      const btn = document.getElementById('dispenseBtn');
+      const input = document.getElementById('manualAmount');
+      if (!btn) return;
+      if (v === 'closed') {
+        btn.disabled = true; btn.style.opacity = 0.5; btn.style.pointerEvents = 'none'; btn.setAttribute('aria-disabled','true'); if (input) input.disabled = true;
+      } else {
+        btn.disabled = false; btn.style.opacity = 1; btn.style.pointerEvents = 'auto'; btn.removeAttribute('aria-disabled'); if (input) input.disabled = false;
+      }
+    } catch (e) { /* ignore */ }
   }
   // Initialize flow rate control on load
   initFlowRateControl();
@@ -959,7 +1065,7 @@ let containerCapacity = 2000;
 let logCounter = 0;
 
 // Dispenser
-function manualDispense() {
+  async function manualDispense() {
   const amount = parseInt(document.getElementById('manualAmount').value);
   if (!amount || amount <= 0) { alert('Enter a valid amount!'); return; }
   if (amount > MAX_AMOUNT) { alert('Maximum allowed is 5000g!'); return; }
@@ -968,13 +1074,139 @@ function manualDispense() {
     Swal.fire('Error!', 'The amount exceeds available feed.', 'error');
     return;
   }
-  feedRemaining -= amount;
-  updateContainerStatus();
-  const percent = containerCapacity > 0 ? ((feedRemaining / containerCapacity) * 100).toFixed(1) : 0;
-  let status = 'success';
-  if (percent < 20) status = 'warning';
-  logDispense(amount, percent, status);
-  document.getElementById('manualAmount').value = '';
+  // Guard: don't proceed if DISPENSE button is disabled / marked aria-disabled
+  const dispenseBtn = document.getElementById('dispenseBtn');
+  if (dispenseBtn && (dispenseBtn.disabled || dispenseBtn.getAttribute('aria-disabled') === 'true')) {
+    try { Swal.fire('Dispense blocked', 'Flow rate is Closed — change to Half/Full to dispense.', 'info'); } catch (e) {}
+    return;
+  }
+  // Determine flow speed (g per second) based on selected flow-rate BEFORE starting impeller
+  const flowSelRaw = (document.getElementById('flowRateSelect') && document.getElementById('flowRateSelect').value) || localStorage.getItem('flowRateMode') || 'full';
+  const flowSel = String(flowSelRaw || '').toLowerCase().trim();
+  const speeds = { 'full': 20, 'half': 10, 'closed': 0, 'full open': 20 };
+  const speed = speeds[flowSel] || 10;
+  if (!speed || speed <= 0) {
+    // Valve is closed: do not start impeller and abort
+    Swal.fire('Error', 'Flow rate is closed. Change to Half or Full Open to dispense.', 'error');
+    return;
+  }
+
+  // disable controls while dispensing
+  const amountInput = document.getElementById('manualAmount');
+  if (dispenseBtn) { dispenseBtn.disabled = true; dispenseBtn.style.opacity = 0.6; dispenseBtn.style.pointerEvents = 'none'; dispenseBtn.setAttribute('aria-disabled','true'); }
+  if (amountInput) amountInput.disabled = true;
+
+  // Start impeller first (spin-up), then open valve — required by hardware sequence
+  const started = await sendPCCommand('14:IMPELLER:ON');
+  if (!started) {
+    if (dispenseBtn) { dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled'); }
+    if (amountInput) amountInput.disabled = false;
+    Swal.fire('Error', 'Failed to start impeller. Dispense aborted.', 'error');
+    return;
+  }
+  // brief spin-up time for impeller
+  await new Promise(r => setTimeout(r, 300));
+  // Now command the valve to the selected flow-rate
+  try {
+    const valveSent = await sendFlowCommand(flowSel);
+    if (!valveSent) {
+      // stop impeller and revert UI
+      await sendPCCommand('14:IMPELLER:OFF').catch(()=>{});
+      if (dispenseBtn) { dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled'); }
+      if (amountInput) amountInput.disabled = false;
+      Swal.fire('Error', 'Failed to open valve. Dispense aborted.', 'error');
+      return;
+    }
+    // small delay to allow valve to actuate
+    await new Promise(r => setTimeout(r, 150));
+  } catch (e) {
+    console.warn('Valve command failed after impeller ON', e);
+    await sendPCCommand('14:IMPELLER:OFF').catch(()=>{});
+    if (dispenseBtn) { dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled'); }
+    if (amountInput) amountInput.disabled = false;
+    Swal.fire('Error', 'Failed to open valve. Dispense aborted.', 'error');
+    return;
+  }
+
+    // Estimate duration (ms) from amount (g) and speed (g/s)
+    const durationMs = Math.max(500, Math.round((amount / speed) * 1000));
+    // Provide UI feedback: change button text and show countdown
+    const originalBtnText = dispenseBtn ? dispenseBtn.textContent : '';
+    if (dispenseBtn) dispenseBtn.textContent = 'Dispensing...';
+    let elapsed = 0;
+    const tickInterval = 500;
+    const countdownElId = 'dispenseCountdown';
+    let countdownEl = document.getElementById(countdownElId);
+    if (!countdownEl) {
+      countdownEl = document.createElement('div');
+      countdownEl.id = countdownElId;
+      countdownEl.style.fontWeight = '700';
+      countdownEl.style.marginTop = '8px';
+      countdownEl.style.color = '#1e5162';
+      if (amountInput && amountInput.parentElement) amountInput.parentElement.appendChild(countdownEl);
+    }
+    countdownEl.textContent = `Estimated: ${(durationMs/1000).toFixed(1)}s`;
+
+    // Wait for duration while optionally updating a small timer
+    await new Promise((resolve) => {
+      const intId = setInterval(() => {
+        elapsed += tickInterval;
+        const remaining = Math.max(0, durationMs - elapsed);
+        countdownEl.textContent = `Estimated: ${(remaining/1000).toFixed(1)}s`;
+        if (elapsed >= durationMs) {
+          clearInterval(intId);
+          resolve();
+        }
+      }, tickInterval);
+    });
+
+    // perform the local dispense bookkeeping now that time elapsed
+    feedRemaining -= amount;
+    updateContainerStatus();
+    const percent = containerCapacity > 0 ? ((feedRemaining / containerCapacity) * 100).toFixed(1) : 0;
+    let status = 'success';
+    if (percent < 20) status = 'warning';
+    logDispense(amount, percent, status);
+    document.getElementById('manualAmount').value = '';
+
+    // stop impeller after estimated dispense
+    const stopped = await sendPCCommand('14:IMPELLER:OFF');
+    if (!stopped) {
+      Swal.fire('Warning', 'Dispensed but failed to stop impeller. Please check device.', 'warning');
+    }
+
+    // After dispensing, automatically close the valve and update UI/state
+    let autoClosed = false;
+    try {
+      const closeSent = await sendFlowCommand('closed');
+      if (!closeSent) {
+        Swal.fire('Warning', 'Dispensed but failed to close valve. Please check device.', 'warning');
+      } else {
+        autoClosed = true;
+        // reflect closed state in UI/storage
+        try {
+          const sel = document.getElementById('flowRateSelect');
+          if (sel) {
+            sel.value = 'closed';
+          }
+        } catch(e){}
+        localStorage.setItem('flowRateMode', 'closed');
+        updateFlowRateAppearance('closed');
+        updateDispenseButtonState('closed');
+      }
+    } catch (e) {
+      console.warn('Failed to auto-close valve after dispense', e);
+    }
+
+    // cleanup UI - if we auto-closed, leave controls disabled for closed state
+    if (dispenseBtn) {
+      if (!autoClosed) {
+        dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled');
+      }
+      dispenseBtn.textContent = originalBtnText || 'DISPENSE';
+    }
+    if (amountInput) amountInput.disabled = false;
+    if (countdownEl) { countdownEl.textContent = ''; }
 }
 
 function updateContainerStatus() {

@@ -181,7 +181,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
       <div class="input-group">
         <label for="usb_ofa">Authentication Code</label>
-        <input id="usb_ofa" name="usb_ofa" type="text" maxlength="6" required>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="usb_ofa" name="usb_ofa" type="text" maxlength="6" required>
+          <button type="button" id="runUfaBtn" class="loginbutton" style="padding:8px 10px; font-size:0.9rem;">Open UFA</button>
+          <span id="ufaStatus" aria-live="polite" style="margin-left:10px; color:#2b7a2b; font-size:0.95rem"></span>
+        </div>
       </div>
 
       <button type="submit" class="loginbutton">Login</button>
@@ -202,6 +206,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       icon.classList.toggle("fa-eye");
       icon.classList.toggle("fa-eye-slash");
     }
+    // Run UFA_App_GUI.py on server when button clicked
+    document.addEventListener('DOMContentLoaded', function(){
+      const btn = document.getElementById('runUfaBtn');
+      if (!btn) return;
+      btn.addEventListener('click', async function(){
+        try {
+          btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Starting...';
+          const res = await fetch('run_ufa.php', { method: 'POST', cache: 'no-store' });
+          const json = await res.json().catch(()=>({ ok:false, error:'invalid response' }));
+          const statusEl = document.getElementById('ufaStatus');
+          if (json.ok) {
+            // show a short non-blocking status instead of an alert
+            if (statusEl) { statusEl.textContent = 'UFA App launch attempted'; }
+          } else {
+            if (statusEl) { statusEl.textContent = 'Failed to launch UFA App'; }
+          }
+        } catch (e) {
+          const statusEl = document.getElementById('ufaStatus');
+          if (statusEl) { statusEl.textContent = 'Request failed'; }
+        } finally {
+          // restore button and clear status after a short delay
+          btn.disabled = false; btn.textContent = 'Open UFA GUI';
+          setTimeout(()=>{ const s = document.getElementById('ufaStatus'); if(s) s.textContent = ''; }, 3000);
+        }
+      });
+    });
   </script>
 </body>
 </html>

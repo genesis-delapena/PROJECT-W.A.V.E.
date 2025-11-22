@@ -343,7 +343,7 @@ if (isset($_SESSION["LAR_level"])) {
         <p id="doDisplay" name="dissolve_sensor">DO (mg/L): --</p>
   <p id="turbidityDisplay" name="turbidity_sensor">Turbidity: --</p>
         <p id="ammoniaDisplay" name="ammonia_sensor">Ammonia (mg/L): --</p>
-        <p id="phDisplay" name="ph_sensor">pH Level: --</p>
+          <p id="phDisplay" name="ph_sensor">pH Level: --</p>
   <p id="tempDisplay" name="temperature_sensor">Temperature (°C): --</p>
 
         <!-- Raw/extra sensor list (populated dynamically) -->
@@ -1024,18 +1024,19 @@ if (ticksG && labelsG && headingReadout && boat) {
 
                 // Update other sensor cards if available
                 const wqi = getField(msg, ['WQI', 'wqi']);
-                const doV = getField(msg, ['DO', 'do', 'DISSOLVED_OXYGEN']);
+                const doV = getField(msg, ['DO', 'do', 'DISSOLVED_OXYGEN', 'DO_MGL', 'DO_MG_L', 'DO_MG/L', 'DO_MG']);
                 const turb = getField(msg, ['NTU_VALUE','NTU','TURB','TURBIDITY','turbidity']);
                 // Accept NH3_PPM and other common ammonia key variants
                 const ammo = getField(msg, ['NH3_PPM','NH3','AMMO', 'AMMONIA', 'ammonia']);
                 const ammoStatus = getField(msg, ['NH3_STATUS','AMMO_STATUS','AMMONIA_STATUS','NH3_STATUS_MSG']);
-                const ph = getField(msg, ['PH', 'pH']);
+                const ph = getField(msg, ['PH', 'PH_LEVEL', 'PH_VAL', 'pH']);
                 const temp = getField(msg, ['TEMP_C','IMU_TEMP_C','TEMP','temperature']);
                 // battery data removed from controller UI; not collected here
                 const batt = undefined;
 
                 try { if (typeof wqi !== 'undefined') { lastKnown.wqi = wqi; saveLastKnownToStorage(); } } catch(e){}
                 try { if (typeof doV !== 'undefined') { lastKnown.do = doV; saveLastKnownToStorage(); } } catch(e){}
+                // DO status from message intentionally ignored on controller display
                 try { if (typeof turb !== 'undefined') { lastKnown.turbidity = turb; saveLastKnownToStorage(); } } catch(e){}
                 try {
                   if (typeof ammo !== 'undefined') {
@@ -1047,6 +1048,7 @@ if (ticksG && labelsG && headingReadout && boat) {
                 } catch(e){}
                 try { if (typeof ammoStatus !== 'undefined') { lastKnown.ammonia_status = ammoStatus; saveLastKnownToStorage(); } } catch(e){}
                 try { if (typeof ph !== 'undefined') { lastKnown.ph = ph; saveLastKnownToStorage(); } } catch(e){}
+                // PH status from message intentionally ignored on controller display
                 try { if (typeof temp !== 'undefined') { lastKnown.temp = temp; saveLastKnownToStorage(); } } catch(e){}
                 // battery persistence removed
 
@@ -1063,8 +1065,8 @@ if (ticksG && labelsG && headingReadout && boat) {
                   function computeWQIFromValues(vals){ const weights = { PH:0.2, DO:0.3, TURB:0.2, AMMO:0.2, TEMP:0.1 }; const qi = {}; qi.PH = Number.isFinite(vals.PH) ? scorePH(vals.PH) : null; qi.DO = Number.isFinite(vals.DO) ? scoreDO(vals.DO) : null; qi.TURB = Number.isFinite(vals.TURB) ? scoreTurb(vals.TURB) : null; qi.AMMO = Number.isFinite(vals.AMMO) ? scoreNH3(vals.AMMO) : null; qi.TEMP = Number.isFinite(vals.TEMP) ? scoreTemp(vals.TEMP) : null; let weightedSum = 0; let weightSum = 0; Object.keys(weights).forEach(k => { if (qi[k] !== null && typeof qi[k] !== 'undefined') { weightedSum += qi[k] * weights[k]; weightSum += weights[k]; } }); if (weightSum <= 0) return null; return Math.round((weightedSum / weightSum) * 10) / 10; }
                   function wqiStatusLabel(wqi){ if (!Number.isFinite(wqi)) return ''; if (wqi >= 90) return 'Excellent'; if (wqi >= 70) return 'Good'; if (wqi >= 50) return 'Medium'; if (wqi >= 25) return 'Poor'; return 'Very Poor'; }
 
-                  const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MG_L','DO_MG/L','DO_MG']);
-                  const phVal = getField(msg, ['PH','PH_LEVEL','pH']);
+                  const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MGL','DO_MG_L','DO_MG/L','DO_MG']);
+                  const phVal = getField(msg, ['PH','PH_LEVEL','PH_VAL','pH']);
                   const wqiServer = getField(msg, ['WQI','WQI_VALUE','WATER_QUALITY_INDEX','WATER_QUALITY']);
 
                   const parsedDO = parseNum(doVal);
@@ -1111,6 +1113,7 @@ if (ticksG && labelsG && headingReadout && boat) {
                   if (finalWqi !== null && Number.isFinite(finalWqi)) { lastKnown.wqi = (finalWqi).toFixed(1); saveLastKnownToStorage(); }
                 } catch(e) {}
                 try { if (typeof lastKnown.do !== 'undefined') document.getElementById('doDisplay').textContent = `DO (mg/L): ${lastKnown.do}`; } catch(e){}
+                // DO status element removed from controller UI; nothing to render
                 try {
                   if (typeof lastKnown.turbidity !== 'undefined') {
                     const tv = parseFloat(lastKnown.turbidity);
@@ -1120,6 +1123,7 @@ if (ticksG && labelsG && headingReadout && boat) {
                 } catch(e){}
                 try { if (typeof lastKnown.ammonia !== 'undefined') document.getElementById('ammoniaDisplay').textContent = `Ammonia (mg/L): ${lastKnown.ammonia}`; } catch(e){}
                 try { if (typeof lastKnown.ph !== 'undefined') document.getElementById('phDisplay').textContent = `pH Level: ${lastKnown.ph}`; } catch(e){}
+                // PH status element removed from controller UI; nothing to render
                 try {
                   if (typeof lastKnown.temp !== 'undefined') {
                     const tv2 = parseFloat(lastKnown.temp);

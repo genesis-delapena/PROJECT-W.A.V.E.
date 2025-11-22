@@ -1,0 +1,41 @@
+Metric,Value
+ARP_reachable,False
+ARP_mac,
+ICMP_sent,5
+ICMP_received,4
+ICMP_loss_percent,20.0
+ICMP_avg_rtt_ms,2107.134699821472
+ICMP_individual_rtt_ms,"[2654.059886932373, 2753.681182861328, 271.3587284088135, 2749.439001083374]"
+WiFi_signal_dbm,-50
+WiFi_link_quality,70
+WiFi_link_quality_max,70
+WiFi_raw_output,"There is 1 interface on the system:  |  |     Name                   : Wi-Fi |     Description            : Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC |     GUID                   : cd1ea539-43cf-495b-86cc-405ec293634c |     Physical address       : a8:e2:91:93:fe:ae |     Interface type         : Primary |     State                  : connected |     SSID                   : WAVE |     AP BSSID               : b8:3a:08:84:99:98 |     Band                   : 2.4 GHz |     Channel                : 6 |     Connected Akm-cipher   : [ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ] |     Network type           : Infrastructure |     Radio type             : 802.11n |     Authentication         : WPA2-Personal |     Cipher                 : CCMP |     Connection mode        : Auto Connect |     Receive rate (Mbps)    : 144.4 |     Transmit rate (Mbps)   : 144.4 |     Signal                 : 100%  |     Rssi                   : -27 |     Profile                : WAVE  |     QoS MSCS Configured         : 0 |     QoS Map Configured          : 0 |     QoS Map Allowed by Policy   : 0"
+WiFi_There is 1 interface on the system,
+WiFi_Name,Wi-Fi
+WiFi_Description,Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC
+WiFi_GUID,cd1ea539-43cf-495b-86cc-405ec293634c
+WiFi_Physical address,a8:e2:91:93:fe:ae
+WiFi_Interface type,Primary
+WiFi_State,connected
+WiFi_SSID,WAVE
+WiFi_AP BSSID,b8:3a:08:84:99:98
+WiFi_Band,2.4 GHz
+WiFi_Channel,6
+WiFi_Connected Akm-cipher,"[ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ]"
+WiFi_Network type,Infrastructure
+WiFi_Radio type,802.11n
+WiFi_Authentication,WPA2-Personal
+WiFi_Cipher,CCMP
+WiFi_Connection mode,Auto Connect
+WiFi_Receive rate (Mbps),144.4
+WiFi_Transmit rate (Mbps),144.4
+WiFi_Signal,100%
+WiFi_Rssi,-27
+WiFi_Profile,WAVE
+WiFi_QoS MSCS Configured,0
+WiFi_QoS Map Configured,0
+WiFi_QoS Map Allowed by Policy,0
+OVERALL_Link_Quality_Score,61
+META_Timestamp,1763816060.7550924
+META_Target_IP,192.168.0.3
+META_Interface,wlan0

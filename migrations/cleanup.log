@@ -13,3 +13,18 @@ Stack trace:
 #2 {main}
   thrown in C:\xampp\htdocs\wave_project\wavedb.php on line 7
 [Sun 11/16/2025  3:00:08.29] Finished cleanup 
+[Thu 11/20/2025 12:07:18.71] Starting cleanup 
+PHP Fatal error:  Uncaught mysqli_sql_exception: No connection could be made because the target machine actively refused it in C:\xampp\htdocs\wave_project\wavedb.php:7
+Stack trace:
+#0 C:\xampp\htdocs\wave_project\wavedb.php(7): mysqli->__construct('localhost', 'root', Object(SensitiveParameterValue), 'wave_db')
+#1 C:\xampp\htdocs\wave_project\migrations\cleanup_old_otps.php(29): require_once('C:\\xampp\\htdocs...')
+#2 {main}
+  thrown in C:\xampp\htdocs\wave_project\wavedb.php on line 7
+
+Fatal error: Uncaught mysqli_sql_exception: No connection could be made because the target machine actively refused it in C:\xampp\htdocs\wave_project\wavedb.php:7
+Stack trace:
+#0 C:\xampp\htdocs\wave_project\wavedb.php(7): mysqli->__construct('localhost', 'root', Object(SensitiveParameterValue), 'wave_db')
+#1 C:\xampp\htdocs\wave_project\migrations\cleanup_old_otps.php(29): require_once('C:\\xampp\\htdocs...')
+#2 {main}
+  thrown in C:\xampp\htdocs\wave_project\wavedb.php on line 7
+[Thu 11/20/2025 12:07:24.23] Finished cleanup 

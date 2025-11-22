@@ -133,7 +133,8 @@ if (isset($_GET['api']) && $_GET['api'] === 'get') {
     $res = curl_exec($ch);
     $err = curl_errno($ch);
     $info = curl_getinfo($ch);
-    curl_close($ch);
+    // Release the curl handle (avoid deprecated curl_close in newer PHP versions)
+    $ch = null;
 
     header('Content-Type: application/json');
     if ($err || $info['http_code'] !== 200 || !$res) {
@@ -142,6 +143,36 @@ if (isset($_GET['api']) && $_GET['api'] === 'get') {
         echo $res;
     }
     exit;
+}
+
+// Proxy POST endpoint to forward flow commands from browser to Flask PC server
+if (isset($_GET['api']) && $_GET['api'] === 'send_flow' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Read raw JSON body
+  $raw = file_get_contents('php://input');
+  // Flask endpoint that accepts PC-originated messages
+  $flaskUrl = "http://192.168.0.2:5000/send_from_pc";
+
+  $ch = curl_init($flaskUrl);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_POST, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+  curl_setopt($ch, CURLOPT_POSTFIELDS, $raw);
+  curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+  $res = curl_exec($ch);
+  $err = curl_errno($ch);
+  $info = curl_getinfo($ch);
+  // Release the curl handle (avoid deprecated curl_close in newer PHP versions)
+  $ch = null;
+
+  header('Content-Type: application/json');
+  if ($err || !isset($info['http_code']) || intval($info['http_code']) >= 400) {
+    http_response_code(502);
+    echo json_encode(["error" => "Failed to forward to Flask", "code" => $info['http_code'] ?? 0, "detail" => $res]);
+  } else {
+    // Return Flask response as-is
+    echo $res;
+  }
+  exit;
 }
 
 // Provide a lightweight JSON endpoint to fetch new event_log rows so other clients
@@ -557,8 +588,8 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 
 <!-- Quick overrides: hide sensor status dots and remove red glow behind power/vessel controls -->
 <style>
-  /* Remove the small red/green status dot on sensor cards */
-  .st-dot { display: none !important; }
+  /* Show the small status dot on sensor cards (on/off visual indicator) */
+  .st-dot { display: inline-block !important; position: absolute; width:12px; height:12px; border-radius:50%; right:12px; top:12px; }
 
   /* Remove the red glow/box-shadow behind the Shutdown/Power button and vessel status pill */
   .st-powerOff, .st-vessel-off, #st-powerBtn.st-powerOff, #st-vesselStatus.st-vessel-off {
@@ -806,7 +837,9 @@ body {
         <small id="wqi_status" style="display:block;margin-top:6px;font-size:0.85rem;color:#0f3b4a;opacity:0.95;">&nbsp;</small>
       </div> 
       <div class="right-grid"> 
-        <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p></div> 
+        <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p>
+          <small id="do_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
+        </div> 
         <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3><p id="turbidity">--</p>
           <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
         </div> 
@@ -814,7 +847,9 @@ body {
           <p id="ammonia">--</p>
           <small id="ammonia_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
         </div>
-        <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div> 
+        <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p>
+          <small id="ph_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
+        </div> 
         <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3><p id="temperature">--</p>
           <small id="temperature_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#0f3b4a;opacity:0.9;">&nbsp;</small>
         </div>
@@ -1205,74 +1240,94 @@ function filterNotificationLogs() {
 
   <!-- Full-width stage: one view at a time -->
   <div id="toolsStageSensors" class="tools-stage" style="display:block;">
-    <div class="tool-actions" style="margin-bottom:15px;">
-      <!-- 🔵 MERGED single toggle button -->
-      <button class="st-btn st-diag st-pill" id="toggleAllBtn" onclick="ST_toggleAllSensorsToggle()">Turn ALL ON</button>
-    </div>
-    <!-- Vessel actions placed at the far right edge of the viewport (fixed) on wide screens -->
-    <div class="top-right-actions" style="position:fixed; top:140px; right:18px; display:flex; gap:10px; align-items:center; z-index:9999;">
-      <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
-      <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
-      <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
+    <!-- Header row for actions (keeps buttons separate and avoids overlap) -->
+    <div class="tools-header" style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px;">
+      <div class="tools-header-left">
+        <!-- left area: reserved for future controls/filters -->
+      </div>
+      <div class="tools-header-right" style="display:flex; gap:10px; align-items:center;">
+        <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
+        <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
+        <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
+      </div>
     </div>
 
     <style>
-      /* Ensure top-right actions are fixed on wide screens and static on narrow screens */
+      /* Tools header: keep actions in-flow to avoid overlapping sensor grid. */
+      #toolsSection .tools-header { width:100%; box-sizing:border-box; }
       @media (max-width: 900px) {
-        #toolsSection .top-right-actions { position: static !important; margin: 0 0 14px 0; justify-content: flex-end; }
-        #toolsSection .top-right-actions p, #toolsSection .top-right-actions button { font-size: 0.95rem; }
-        #toolsStageSensors { padding-top: 56px; }
+        #toolsSection .tools-header { flex-direction:column; align-items:stretch; gap:8px; }
+        #toolsSection .tools-header-right { justify-content:flex-end; }
+        #toolsStageSensors { padding-top: 6px; }
       }
       @media (min-width: 901px) {
-        /* Fixed controls sit below the header (header height = 100px + small offset) */
-  #toolsSection .top-right-actions { position: fixed !important; top: 140px !important; right: 18px !important; }
+        #toolsSection .tools-header { flex-direction:row; }
         #toolsStageSensors { padding-top: 6px; }
       }
     </style>
     <div class="st-grid">
+      <!-- Sensor cards: PH, Turbidity, Temperature, Dissolved Oxygen, Loadcells, Ultrasonic -->
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-vial"></i></div>
-        <span class="st-dot st-off" id="st-dot-ph"></span>
-        <p>PH LEVEL</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-ph" onchange="ST_toggleSensor(this,'ph')"><span class="st-slider"></span></label>
+        <h4>PH LEVEL</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-ph" onchange="ST_toggleSensor(this,'ph')">
+          <label for="st-sw-ph" class="st-slider"></label>
+        </div>
       </div>
+
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-tint"></i></div>
-        <span class="st-dot st-off" id="st-dot-turb"></span>
-        <p>TURBIDITY</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-turb" onchange="ST_toggleSensor(this,'turb')"><span class="st-slider"></span></label>
+        <h4>TURBIDITY</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-turb" onchange="ST_toggleSensor(this,'turb')">
+          <label for="st-sw-turb" class="st-slider"></label>
+        </div>
       </div>
+
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-thermometer-half"></i></div>
-        <span class="st-dot st-off" id="st-dot-temp"></span>
-        <p>TEMPERATURE</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-temp" onchange="ST_toggleSensor(this,'temp')"><span class="st-slider"></span></label>
+        <h4>TEMPERATURE</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-temp" onchange="ST_toggleSensor(this,'temp')">
+          <label for="st-sw-temp" class="st-slider"></label>
+        </div>
       </div>
-      <!-- Ammonia ST toggle removed per request -->
+
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-wind"></i></div>
-        <span class="st-dot st-off" id="st-dot-do"></span>
-        <p>DISSOLVED OXYGEN</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-do" onchange="ST_toggleSensor(this,'do')"><span class="st-slider"></span></label>
+        <h4>DISSOLVED OXYGEN</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-do" onchange="ST_toggleSensor(this,'do')">
+          <label for="st-sw-do" class="st-slider"></span></label>
+        </div>
       </div>
+
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-balance-scale"></i></div>
-        <span class="st-dot st-off" id="st-dot-load1"></span>
-        <p>LOADCELL 1</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-load1" onchange="ST_toggleSensor(this,'load1')"><span class="st-slider"></span></label>
+        <h4>LOADCELL 1</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-load1" onchange="ST_toggleSensor(this,'load1')">
+          <label for="st-sw-load1" class="st-slider"></label>
+        </div>
       </div>
+
       <div class="st-card">
         <div class="st-icon"><i class="fas fa-balance-scale"></i></div>
-        <span class="st-dot st-off" id="st-dot-load2"></span>
-        <p>LOADCELL 2</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-load2" onchange="ST_toggleSensor(this,'load2')"><span class="st-slider"></span></label>
+        <h4>LOADCELL 2</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-load2" onchange="ST_toggleSensor(this,'load2')">
+          <label for="st-sw-load2" class="st-slider"></label>
+        </div>
       </div>
+
       <div class="st-card">
-        <div class="st-icon"><i class="fas fa-satellite-dish"></i></div>
-        <span class="st-dot st-off" id="st-dot-ultra"></span>
-        <p>FEED LEVEL</p>
-        <p>(ULTRA SONIC)</p>
-        <label class="st-switch"><input type="checkbox" id="st-sw-ultra" onchange="ST_toggleSensor(this,'ultra')"><span class="st-slider"></span></label>
+        <div class="st-icon"><i class="fas fa-broadcast-tower"></i></div>
+        <h4>FEED LEVEL (ULTRASONIC)</h4>
+        <div class="st-switch">
+          <input type="checkbox" id="st-sw-ultra" onchange="ST_toggleSensor(this,'ultra')">
+          <label for="st-sw-ultra" class="st-slider"></label>
+        </div>
       </div>
     </div>
   </div>
@@ -1426,11 +1481,11 @@ async function chartBackgroundTick() {
       const ammoRaw = s.AMMO ?? s.ammo ?? s.NH3_PPM ?? s.NH3_PPM_VALUE ?? s.nh3_ppm ?? s.NH3_PPM_VALUE;
       const data = {
         WQI:  safeNumberOrNull(s.WQI  ?? s.wqi),
-        PH:   safeNumberOrNull(s.PH   ?? s.pH),
+        PH:   safeNumberOrNull(s.PH   ?? s.pH ?? s.PH_VAL ?? s.PH_LEVEL),
         TURB: safeNumberOrNull(turbRaw ?? s.TURB ?? s.turb),
         TEMP: safeNumberOrNull(tempRaw ?? s.TEMP ?? s.temp),
         AMMO: safeNumberOrNull(ammoRaw ?? s.AMMO ?? s.ammo),
-        DO:   safeNumberOrNull(s.DO   ?? s.do)
+        DO:   safeNumberOrNull(s.DO   ?? s.do ?? s.DO_MGL ?? s.DO_MG_L ?? s.DO_MG)
       };
       appendChartTick(data);
       // persist a minimal lastUpdated so restore shows recency
@@ -1785,14 +1840,23 @@ function renderFromLastKnown(){
   try{
     if (typeof lastKnown.WQI !== 'undefined') document.getElementById('wqiValue').textContent = lastKnown.WQI;
   if (typeof lastKnown.WQI_STATUS !== 'undefined') { const s = document.getElementById('wqi_status'); if (s) s.textContent = lastKnown.WQI_STATUS || ''; }
-    if (typeof lastKnown.PH !== 'undefined') document.getElementById('ph_level').textContent = lastKnown.PH;
+    // PH value: accept multiple casings
+    const phVal = (typeof lastKnown.PH !== 'undefined') ? lastKnown.PH : (typeof lastKnown.ph !== 'undefined' ? lastKnown.ph : undefined);
+    if (typeof phVal !== 'undefined') document.getElementById('ph_level').textContent = phVal;
     if (typeof lastKnown.TURB !== 'undefined') document.getElementById('turbidity').textContent = (Number.isFinite(Number(lastKnown.TURB)) ? Number(lastKnown.TURB).toFixed(1) : String(lastKnown.TURB));
     if (typeof lastKnown.TEMP !== 'undefined') document.getElementById('temperature').textContent = (Number.isFinite(Number(lastKnown.TEMP)) ? Number(lastKnown.TEMP).toFixed(2) : String(lastKnown.TEMP));
-    if (typeof lastKnown.AMMO !== 'undefined') {
+    if (typeof lastKnown.AMMO !== 'undefined' || typeof lastKnown.ammonia !== 'undefined') {
       const aVal = lastKnown.AMMO;
-      document.getElementById('ammonia').textContent = (Number.isFinite(Number(aVal)) ? Number(aVal).toFixed(2) : String(aVal));
+      const aDisplay = (typeof aVal === 'undefined' || aVal === null) ? lastKnown.ammonia : aVal;
+      document.getElementById('ammonia').textContent = (Number.isFinite(Number(aDisplay)) ? Number(aDisplay).toFixed(2) : String(aDisplay));
     }
-    if (typeof lastKnown.DO !== 'undefined') document.getElementById('do').textContent = lastKnown.DO;
+    const doVal = (typeof lastKnown.DO !== 'undefined') ? lastKnown.DO : (typeof lastKnown.do !== 'undefined' ? lastKnown.do : undefined);
+    if (typeof doVal !== 'undefined') document.getElementById('do').textContent = doVal;
+      // Restore persisted PH/DO status strings if available (accept multiple key casings)
+      const phStatusVal = (typeof lastKnown.PH_STATUS !== 'undefined') ? lastKnown.PH_STATUS : (typeof lastKnown.ph_status !== 'undefined' ? lastKnown.ph_status : (typeof lastKnown.phStatus !== 'undefined' ? lastKnown.phStatus : undefined));
+      if (typeof phStatusVal !== 'undefined') { const e = document.getElementById('ph_status'); if (e) e.textContent = phStatusVal || ''; }
+      const doStatusVal = (typeof lastKnown.DO_STATUS !== 'undefined') ? lastKnown.DO_STATUS : (typeof lastKnown.do_status !== 'undefined' ? lastKnown.do_status : (typeof lastKnown.doStatus !== 'undefined' ? lastKnown.doStatus : undefined));
+      if (typeof doStatusVal !== 'undefined') { const e = document.getElementById('do_status'); if (e) e.textContent = doStatusVal || ''; }
     // status fields
     if (typeof lastKnown.TURB_STATUS !== 'undefined') {
       const e = document.getElementById('turbidity_status'); if (e) e.textContent = lastKnown.TURB_STATUS || '';
@@ -1829,28 +1893,35 @@ function appendChartTick(values) {
     const stored = loadChartHistory() || { labels: [], datasets: {} , lastUpdated: now };
     // push shared timeline label (empty string to keep compact)
     stored.labels.push('');
-    Object.keys(sensorConfig).forEach(k => {
+    // Ensure PH and DO are always persisted alongside any configured sensor datasets
+    const configuredKeys = (typeof sensorConfig === 'object' && sensorConfig) ? Object.keys(sensorConfig) : [];
+    const keysList = configuredKeys.concat(['PH','DO']).filter((v, i, a) => a.indexOf(v) === i);
+    keysList.forEach(k => {
       if (!stored.datasets[k]) stored.datasets[k] = [];
-        let v = null;
-        if (typeof values[k] !== 'undefined' && values[k] !== null && values[k] !== '') {
-          const n = Number(values[k]); v = Number.isFinite(n) ? n : values[k];
-        } else {
-          // Fallback: use lastKnown persisted value if available (prefer numeric)
-          try {
-            if (typeof lastKnown[k] !== 'undefined' && lastKnown[k] !== null && lastKnown[k] !== '') {
-              const lk = Number(lastKnown[k]); if (Number.isFinite(lk)) v = lk; else v = lastKnown[k];
-            } else {
-              // Otherwise repeat the last stored point for smoothness
-              const arr = stored.datasets[k];
-              if (arr && arr.length > 0) {
-                const last = arr[arr.length - 1];
-                if (typeof last !== 'undefined' && last !== null) v = last;
-              }
-            }
-          } catch (e) {
-            /* ignore fallback errors */
+      let v = null;
+      try {
+        // Prefer fresh numeric value from values when present
+        if (typeof values[k] !== 'undefined' && values[k] !== null && String(values[k]).trim() !== '') {
+          const n = Number(values[k]);
+          if (Number.isFinite(n)) v = n;
+        }
+        // If no fresh numeric value, try lastKnown persisted value
+        if (v === null) {
+          if (typeof lastKnown[k] !== 'undefined' && lastKnown[k] !== null && String(lastKnown[k]).trim() !== '') {
+            const lk = Number(lastKnown[k]); if (Number.isFinite(lk)) v = lk;
           }
         }
+        // If still no value, repeat last stored point for smoothness
+        if (v === null) {
+          const arr = stored.datasets[k];
+          if (arr && arr.length > 0) {
+            const last = arr[arr.length - 1];
+            if (typeof last !== 'undefined' && last !== null) v = last;
+          }
+        }
+      } catch (e) {
+        /* ignore fallback errors */
+      }
       stored.datasets[k].push(v);
       if (stored.datasets[k].length > maxPoints) stored.datasets[k].shift();
     });
@@ -1934,8 +2005,8 @@ async function fetchData() {
       }
 
       // PH
-      if (present(s.PH ?? s.pH)) {
-        const p = safeNumber(s.PH ?? s.pH);
+      if (present(s.PH ?? s.pH ?? s.PH_VAL ?? s.PH_LEVEL)) {
+        const p = safeNumber(s.PH ?? s.pH ?? s.PH_VAL ?? s.PH_LEVEL);
         document.getElementById("ph_level").textContent = p;
         lastKnown.PH = p;
       } else if (typeof lastKnown.PH !== 'undefined') {
@@ -1991,8 +2062,8 @@ async function fetchData() {
       }
 
       // DO
-      if (present(s.DO ?? s.do)) {
-        const dval = safeNumber(s.DO ?? s.do);
+      if (present(s.DO ?? s.do ?? s.DO_MGL ?? s.DO_MG_L ?? s.DO_MG)) {
+        const dval = safeNumber(s.DO ?? s.do ?? s.DO_MGL ?? s.DO_MG_L ?? s.DO_MG);
         document.getElementById("do").textContent = dval;
         lastKnown.DO = dval;
       } else if (typeof lastKnown.DO !== 'undefined') {
@@ -2044,6 +2115,40 @@ async function fetchData() {
         }
       }
 
+      // DO status (accept common variants)
+      const doStatusEl = document.getElementById('do_status');
+      if (doStatusEl) {
+        const doStatusRaw = s.DO_STATUS ?? s.DO_STATUS_MSG ?? s.DO_STATUS_TEXT ?? s.DISSOLVED_OXYGEN_STATUS ?? s.do_status ?? s.dissolved_oxygen_status;
+        if (present(doStatusRaw)) {
+          const ds = String(doStatusRaw);
+          doStatusEl.textContent = ds;
+          lastKnown.DO_STATUS = ds; lastKnown.do_status = ds; // persist both casings
+          saveLastKnownToStorage();
+        } else if (typeof lastKnown.DO_STATUS !== 'undefined' || typeof lastKnown.do_status !== 'undefined') {
+          const stored = typeof lastKnown.DO_STATUS !== 'undefined' ? lastKnown.DO_STATUS : lastKnown.do_status;
+          doStatusEl.textContent = stored || '';
+        } else {
+          doStatusEl.textContent = '';
+        }
+      }
+
+      // PH status (accept common variants)
+      const phStatusEl = document.getElementById('ph_status');
+      if (phStatusEl) {
+        const phStatusRaw = s.PH_STATUS ?? s.PH_STATUS_MSG ?? s.PH_STATUS_TEXT ?? s.pH_STATUS ?? s.ph_status ?? s.ph_status_msg;
+        if (present(phStatusRaw)) {
+          const ps = String(phStatusRaw);
+          phStatusEl.textContent = ps;
+          lastKnown.PH_STATUS = ps; lastKnown.ph_status = ps; // persist both casings
+          saveLastKnownToStorage();
+        } else if (typeof lastKnown.PH_STATUS !== 'undefined' || typeof lastKnown.ph_status !== 'undefined') {
+          const stored = typeof lastKnown.PH_STATUS !== 'undefined' ? lastKnown.PH_STATUS : lastKnown.ph_status;
+          phStatusEl.textContent = stored || '';
+        } else {
+          phStatusEl.textContent = '';
+        }
+      }
+
       // Persist any updated lastKnown values (including status fields)
       saveLastKnownToStorage();
 
@@ -2053,11 +2158,11 @@ async function fetchData() {
       // Decide which sensors are present this tick
       const presentMap = {
         WQI: present(s.WQI ?? s.wqi),
-        PH:  present(s.PH ?? s.pH),
+        PH:  present(s.PH ?? s.pH ?? s.PH_VAL ?? s.PH_LEVEL),
         TURB: present(turbRaw),
         TEMP: present(tempRaw),
         AMMO: present(ammoRaw),
-        DO:   present(s.DO ?? s.do)
+        DO:   present(s.DO ?? s.do ?? s.DO_MGL ?? s.DO_MG_L ?? s.DO_MG)
       };
 
       // Always append this tick to the persisted chart history so it survives navigation/refresh
@@ -2070,14 +2175,54 @@ async function fetchData() {
 
         // For each sensor dataset, pick the fresh value if present otherwise lastKnown fallback
         Object.keys(sensorConfig).forEach((key, idx) => {
-          let val = data[key];
-          if (!presentMap[key] && typeof lastKnown[key] !== 'undefined') val = lastKnown[key];
-          // Ensure numeric types remain numeric where possible
-          const n = Number(val);
-          const pushVal = Number.isFinite(n) ? n : val;
-          // Push to the dataset matching this key (datasets created in same order)
+          // Determine the freshest value for this sensor key, being tolerant to
+          // casing/variant differences (PH/DO sometimes arrive as uppercase keys)
+          let val;
+          const kLower = String(key).toLowerCase();
+          if (kLower === 'ph') {
+            // Prefer fresh numeric value when present; avoid treating null as 0
+            if (present(data.PH)) val = safeNumber(data.PH);
+            else if (present(data.ph)) val = safeNumber(data.ph);
+            else {
+              // fallback to persisted lastKnown (check both casings)
+              if (typeof lastKnown.PH !== 'undefined' && lastKnown.PH !== null && String(lastKnown.PH).trim() !== '') val = Number(lastKnown.PH);
+              else if (typeof lastKnown.ph !== 'undefined' && lastKnown.ph !== null && String(lastKnown.ph).trim() !== '') val = Number(lastKnown.ph);
+              else val = undefined;
+            }
+          } else if (kLower === 'do') {
+            if (present(data.DO)) val = safeNumber(data.DO);
+            else if (present(data.do)) val = safeNumber(data.do);
+            else {
+              if (typeof lastKnown.DO !== 'undefined' && lastKnown.DO !== null && String(lastKnown.DO).trim() !== '') val = Number(lastKnown.DO);
+              else if (typeof lastKnown.do !== 'undefined' && lastKnown.do !== null && String(lastKnown.do).trim() !== '') val = Number(lastKnown.do);
+              else val = undefined;
+            }
+          } else {
+            // default behavior for other sensors
+            val = (typeof data[key] !== 'undefined') ? data[key] : undefined;
+            if (!presentMap[key] && typeof lastKnown[key] !== 'undefined') val = lastKnown[key];
+          }
+
+          // Ensure numeric types remain numeric where possible; if still undefined,
+          // repeat the previous point in the live dataset to avoid falling to zero.
+          // Only convert to Number when a present non-empty value exists.
+          let pushVal;
+          if (typeof val !== 'undefined' && val !== null && String(val).trim() !== '') {
+            const n = Number(val);
+            pushVal = Number.isFinite(n) ? n : val;
+          } else {
+            pushVal = null;
+          }
           const ds = liveChart.data.datasets[idx];
           if (!ds) return;
+          if (typeof pushVal === 'undefined' || pushVal === null) {
+            // repeat last known plotted point if available
+            if (ds.data.length > 0) {
+              pushVal = ds.data[ds.data.length - 1];
+            } else {
+              pushVal = null;
+            }
+          }
           ds.data.push(pushVal);
           if (ds.data.length > maxPoints) ds.data.shift();
         });

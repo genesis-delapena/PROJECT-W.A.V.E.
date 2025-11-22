@@ -116,11 +116,12 @@ def find_usb_drive(expected_label=None):
 class FACodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("2-Factor Authentication Code Generator")
+        self.root.title("Two-Factor Authentication Code Generator")
         self.root.geometry("500x420")
         self.root.resizable(False, False)
 
         ttk.Label(root, text="W.A.V.E. AUTHENTICATION CODE GENERATOR", font=("Times New Roman", 16, "bold")).pack(pady=10)
+
 
         # Passphrase
         ttk.Label(root, text="Master Passphrase:").pack()

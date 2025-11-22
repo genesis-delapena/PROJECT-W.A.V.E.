@@ -356,7 +356,9 @@ function performLogout() {
           <small id="wqi_status" style="display:block;margin-top:6px;font-size:0.85rem;color:#083344;opacity:0.95;">&nbsp;</small>
         </div>
         <div class="right-grid">
-          <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p></div>
+          <div class="sensor-card" onclick="switchChart('DO')"><h3>Dissolved Oxygen (mg/L)</h3><p id="do">--</p>
+            <small id="do_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.95;">&nbsp;</small>
+          </div>
           <div class="sensor-card" onclick="switchChart('TURB')"><h3>Turbidity (NTU)</h3>
             <p id="turbidity">--</p>
             <small id="turbidity_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
@@ -366,7 +368,9 @@ function performLogout() {
             <p id="ammonia">--</p>
             <small id="ammonia_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
           </div>
-          <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p></div>
+          <div class="sensor-card" onclick="switchChart('PH')"><h3>pH Level</h3><p id="ph_level">--</p>
+            <small id="ph_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.95;">&nbsp;</small>
+          </div>
           <div class="sensor-card wide" onclick="switchChart('TEMP')"><h3>Water Temperature (°C)</h3>
             <p id="temperature">--</p>
             <small id="temperature_status" style="display:block;margin-top:6px;font-size:0.75rem;color:#083344;opacity:0.9;">&nbsp;</small>
@@ -1278,10 +1282,53 @@ window.addEventListener('storage', function(e) {
         }
       }
 
+      // --- PH & DO: display values and status (persist last-known as needed) ---
+      const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MGL','DO_MG_L','DO_MG/L','DO_MG']);
+      const phVal = getField(msg, ['PH','PH_LEVEL','PH_VAL','pH']);
+      const doStatusRaw = getField(msg, ['DO_STATUS','DO_STATUS_MSG','DISSOLVED_OXYGEN_STATUS','do_status']);
+      const phStatusRaw = getField(msg, ['PH_STATUS','PH_STATUS_MSG','ph_status','pH_STATUS']);
+
+      const doEl = document.getElementById('do');
+      const phEl = document.getElementById('ph_level');
+      const doStatEl = document.getElementById('do_status');
+      const phStatEl = document.getElementById('ph_status');
+
+      if (typeof doVal !== 'undefined' && doVal !== null && String(doVal).trim() !== '') {
+        if (doEl) doEl.textContent = String(doVal);
+        _persistLastKnownPatch('do', String(doVal));
+      } else {
+        try { const raw = localStorage.getItem('wave_lastKnown_v1'); if (raw){ const obj=JSON.parse(raw); if (obj && typeof obj.do !== 'undefined' && doEl && (!doEl.textContent||doEl.textContent==='--')) doEl.textContent = obj.do; } } catch(e){}
+      }
+
+      if (typeof phVal !== 'undefined' && phVal !== null && String(phVal).trim() !== '') {
+        if (phEl) phEl.textContent = String(phVal);
+        _persistLastKnownPatch('ph', String(phVal));
+      } else {
+        try { const raw = localStorage.getItem('wave_lastKnown_v1'); if (raw){ const obj=JSON.parse(raw); if (obj && typeof obj.ph !== 'undefined' && phEl && (!phEl.textContent||phEl.textContent==='--')) phEl.textContent = obj.ph; } } catch(e){}
+      }
+
+      if (doStatEl) {
+        if (typeof doStatusRaw !== 'undefined' && doStatusRaw !== null && String(doStatusRaw).trim() !== '') {
+          doStatEl.textContent = String(doStatusRaw);
+          _persistLastKnownPatch('do_status', String(doStatusRaw));
+        } else {
+          try { const raw = localStorage.getItem('wave_lastKnown_v1'); if (raw){ const obj=JSON.parse(raw); if (obj && obj.do_status) doStatEl.textContent = obj.do_status; else doStatEl.textContent=''; } } catch(e){ doStatEl.textContent=''; }
+        }
+      }
+
+      if (phStatEl) {
+        if (typeof phStatusRaw !== 'undefined' && phStatusRaw !== null && String(phStatusRaw).trim() !== '') {
+          phStatEl.textContent = String(phStatusRaw);
+          _persistLastKnownPatch('ph_status', String(phStatusRaw));
+        } else {
+          try { const raw = localStorage.getItem('wave_lastKnown_v1'); if (raw){ const obj=JSON.parse(raw); if (obj && obj.ph_status) phStatEl.textContent = obj.ph_status; else phStatEl.textContent=''; } } catch(e){ phStatEl.textContent=''; }
+        }
+      }
+
       // --- WQI: prefer server-provided WQI, otherwise compute from available values and fallbacks ---
       try {
-        const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MG_L','DO_MG/L','DO_MG']);
-        const phVal = getField(msg, ['PH','PH_LEVEL','pH']);
+        const doVal = getField(msg, ['DO','DISSOLVED_OXYGEN','DO_MGL','DO_MG_L','DO_MG/L','DO_MG']);
+        const phVal = getField(msg, ['PH','PH_LEVEL','PH_VAL','pH']);
         const wqiServer = getField(msg, ['WQI','WQI_VALUE','WATER_QUALITY_INDEX','WATER_QUALITY']);
 
         // parse helper
