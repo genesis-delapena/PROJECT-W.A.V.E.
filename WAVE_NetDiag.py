@@ -20,6 +20,16 @@ import time
 import platform # Required for cross-platform detection
 import pandas as pd # Required for CSV export
 import re           # Required for parsing raw output and alignment
+import signal
+import sys
+
+# GUI: keep process alive until user closes the window via the X button
+try:
+    import tkinter as tk
+    from tkinter.scrolledtext import ScrolledText
+    _HAS_TK = True
+except Exception:
+    _HAS_TK = False
 
 # ------------------------------
 # CONFIG
@@ -377,6 +387,42 @@ def print_presentable_output(report):
     print(f"  Score: {report['link_quality_score']}/100")
 
 
+def presentable_text(report):
+    """Return the diagnostic report as a formatted text block for GUI display."""
+    lines = []
+    lines.append("=== Structured Diagnostic Output ===\n")
+    lines.append("ARP:")
+    lines.append(f"  reachable: {report['arp_reachability']['reachable']}")
+    lines.append(f"  mac: {report['arp_reachability']['mac']}\n")
+
+    lines.append("ICMP:")
+    lines.append(f"  sent: {report['icmp_test']['sent']}")
+    lines.append(f"  received: {report['icmp_test']['received']}")
+    lines.append(f"  loss_percent: {report['icmp_test']['loss_percent']}")
+    lines.append(f"  avg_rtt_ms: {report['icmp_test']['avg_rtt_ms']}\n")
+
+    lines.append("WiFi metrics:")
+    wifi_data = report['wifi_metrics']
+    details = wifi_data.get('details', {}) if isinstance(wifi_data.get('details', {}), dict) else {}
+    if not details:
+        details = { k:v for k,v in wifi_data.items() if k not in ('signal_dbm','link_quality','link_quality_max','raw') }
+
+    system = platform.system()
+    if system == "Windows":
+        lines.append(f"  signal_percent: {details.get('Signal', 'N/A')}")
+    else:
+        lines.append(f"  signal_percent: N/A (Linux Rssi is dBm)")
+
+    # key details
+    for k, v in details.items():
+        lines.append(f"  {k:24} : {v}")
+
+    lines.append(f"  Rssi                     : {wifi_data.get('signal_dbm', 'N/A')}")
+    lines.append("\nOverall Link Quality Score:")
+    lines.append(f"  Score: {report['link_quality_score']}/100")
+    return "\n".join(lines)
+
+
 # ------------------------------
 # MAIN
 # ------------------------------
@@ -408,3 +454,61 @@ if __name__ == "__main__":
     save_report_as_csv(report, CSV_FILE)
 
     print("\n=== Diagnostic Complete ===\n")
+
+    # Prepare GUI display text
+    gui_text = presentable_text(report)
+
+    # Ignore interrupt signals so only the GUI close (WM_DELETE_WINDOW) will terminate
+    for sig_name in ('SIGINT', 'SIGTERM', 'SIGHUP'):
+        try:
+            sig = getattr(signal, sig_name)
+            signal.signal(sig, signal.SIG_IGN)
+        except Exception:
+            # Some signals may not exist on the platform (e.g., SIGHUP on Windows)
+            pass
+
+    if _HAS_TK:
+        try:
+            root = tk.Tk()
+            root.title('WAVE NetDiag — Diagnostic Report')
+            # Prevent accidental programmatic destruction: only WM_DELETE_WINDOW will exit.
+            def on_close():
+                try:
+                    root.destroy()
+                except Exception:
+                    pass
+
+            root.protocol('WM_DELETE_WINDOW', on_close)
+
+            txt = ScrolledText(root, wrap='word', width=100, height=35)
+            txt.insert('1.0', gui_text)
+            txt.configure(state='disabled')
+            txt.pack(fill='both', expand=True)
+
+            # Make the window appear and stay until the user presses the X button
+            root.mainloop()
+        except Exception as e:
+            print(f"[!] GUI start failed: {e}")
+            print("The process will remain running; press Ctrl+C to exit if needed.")
+            # Block indefinitely until user kills the process (we ignored signals above)
+            try:
+                while True:
+                    time.sleep(3600)
+            except KeyboardInterrupt:
+                pass
+    else:
+        # No Tk available: print message and block until user kills process (only X in GUI can't be used)
+        print("No GUI available on this system. The diagnostic process will remain running until manually terminated.")
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+
+    # Restore default handlers and exit cleanly
+    try:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except Exception:
+        pass
+
+    sys.exit(0)

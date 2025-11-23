@@ -1246,9 +1246,10 @@ function filterNotificationLogs() {
         <!-- left area: reserved for future controls/filters -->
       </div>
       <div class="tools-header-right" style="display:flex; gap:10px; align-items:center;">
-        <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
-        <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
-        <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
+  <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
+  <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
+  <button id="runNetBtn" class="st-btn st-export st-pill" title="Run NetDiag as Administrator" onclick="runNetDiag()">Run Diagnostics</button>
+  <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
       </div>
     </div>
 
@@ -3130,6 +3131,30 @@ async function runFA(){
     Swal.fire('Error', err.message || 'Failed to start FA script', 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Generate 2FA Code'; }
+  }
+}
+
+// Run WAVE_NetDiag.py as Administrator (best-effort elevation on Windows)
+async function runNetDiag(){
+  const btn = document.getElementById('runNetBtn');
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting...'; }
+    const resp = await fetch('run_netdiag.php', { method: 'POST', credentials: 'same-origin' });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error('Server error: ' + resp.status + ' ' + txt);
+    }
+    const j = await resp.json();
+    if (j.success) {
+      // Do not show a blocking SweetAlert on success; just log the action
+      try { ST_addLog('info', `[ADMIN] ${'<?php echo addslashes($_SESSION['username']); ?>'} started WAVE_NetDiag.py`); } catch(e){}
+    } else {
+      Swal.fire('Error', j.message || 'Failed to start NetDiag', 'error');
+    }
+  } catch (err) {
+    Swal.fire('Error', err.message || 'Failed to start NetDiag', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run NetDiag (Admin)'; }
   }
 }
 </script>
