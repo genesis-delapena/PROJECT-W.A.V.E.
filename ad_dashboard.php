@@ -9,11 +9,12 @@ if (isset($_POST['log_to_event_log'])) {
   // PHP version of classifyLog to match JS logic
   function classifyLog($type, $message) {
     $msg = strtolower($message);
+    $type_lower = strtolower($type);
     if (preg_match('/login|logged in|logout|logged out/', $msg)) return 'ACCESS';
     if ($type === 'info' || strpos($msg, 'info') !== false) return 'INFO';
     if ($type === 'alert' || preg_match('/shutdown|powered on/', $msg)) return 'ALERT';
     if (preg_match('/sensor|all sensors/', $msg)) return 'ACTION';
-    if ($type === 'warn' || preg_match('/⚠️|delay|fail|error|alarm/', $msg)) return 'ALARM';
+    if ($type_lower === 'alarm' || $type === 'warn' || preg_match('/⚠️|delay|fail|error|alarm|watchdog/', $msg)) return 'ALARM';
     return 'INFO';
   }
 
@@ -3147,14 +3148,14 @@ async function runNetDiag(){
     const j = await resp.json();
     if (j.success) {
       // Do not show a blocking SweetAlert on success; just log the action
-      try { ST_addLog('info', `[ADMIN] ${'<?php echo addslashes($_SESSION['username']); ?>'} started WAVE_NetDiag.py`); } catch(e){}
+      try { ST_addLog('info', `[ADMIN] ${'<?php echo addslashes($_SESSION['username']); ?>'} started Network Diagnostic`); } catch(e){}
     } else {
       Swal.fire('Error', j.message || 'Failed to start NetDiag', 'error');
     }
   } catch (err) {
     Swal.fire('Error', err.message || 'Failed to start NetDiag', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Run NetDiag (Admin)'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Diagnostic'; }
   }
 }
 </script>

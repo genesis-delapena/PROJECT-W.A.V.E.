@@ -2,23 +2,40 @@ Metric,Value
 ARP_reachable,False
 ARP_mac,
 ICMP_sent,5
-ICMP_received,0
-ICMP_loss_percent,100.0
-ICMP_avg_rtt_ms,
-ICMP_individual_rtt_ms,[]
-WiFi_signal_dbm,
-WiFi_link_quality,
-WiFi_link_quality_max,
-WiFi_raw_output,There is 1 interface on the system:  |  |     Name                   : Wi-Fi |     Description            : Intel(R) Dual Band Wireless-AC 8265 |     GUID                   : a1de2991-7be4-449d-bfd4-1a44223ca227 |     Physical address       : 98:3b:8f:1b:a0:6c |     State                  : disconnected |     Radio status           : Hardware On |                              Software Off |  |     Hosted network status  : Not available
+ICMP_received,5
+ICMP_loss_percent,0.0
+ICMP_avg_rtt_ms,12.623167037963867
+ICMP_individual_rtt_ms,"[20.56884765625, 8.106231689453125, 15.853404998779297, 9.970903396606445, 8.616447448730469]"
+WiFi_signal_dbm,-50
+WiFi_link_quality,70
+WiFi_link_quality_max,70
+WiFi_raw_output,"There is 1 interface on the system:  |  |     Name                   : Wi-Fi |     Description            : Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC |     GUID                   : cd1ea539-43cf-495b-86cc-405ec293634c |     Physical address       : a8:e2:91:93:fe:ae |     Interface type         : Primary |     State                  : connected |     SSID                   : WAVE |     AP BSSID               : b8:3a:08:84:99:98 |     Band                   : 2.4 GHz |     Channel                : 6 |     Connected Akm-cipher   : [ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ] |     Network type           : Infrastructure |     Radio type             : 802.11n |     Authentication         : WPA2-Personal |     Cipher                 : CCMP |     Connection mode        : Profile |     Receive rate (Mbps)    : 144.4 |     Transmit rate (Mbps)   : 144.4 |     Signal                 : 100%  |     Rssi                   : -25 |     Profile                : WAVE  |     QoS MSCS Configured         : 0 |     QoS Map Configured          : 0 |     QoS Map Allowed by Policy   : 0"
 WiFi_There is 1 interface on the system,
 WiFi_Name,Wi-Fi
-WiFi_Description,Intel(R) Dual Band Wireless-AC 8265
-WiFi_GUID,a1de2991-7be4-449d-bfd4-1a44223ca227
-WiFi_Physical address,98:3b:8f:1b:a0:6c
-WiFi_State,disconnected
-WiFi_Radio status,Hardware On
-WiFi_Hosted network status,Not available
-OVERALL_Link_Quality_Score,30
-META_Timestamp,1763860795.1508994
+WiFi_Description,Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC
+WiFi_GUID,cd1ea539-43cf-495b-86cc-405ec293634c
+WiFi_Physical address,a8:e2:91:93:fe:ae
+WiFi_Interface type,Primary
+WiFi_State,connected
+WiFi_SSID,WAVE
+WiFi_AP BSSID,b8:3a:08:84:99:98
+WiFi_Band,2.4 GHz
+WiFi_Channel,6
+WiFi_Connected Akm-cipher,"[ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ]"
+WiFi_Network type,Infrastructure
+WiFi_Radio type,802.11n
+WiFi_Authentication,WPA2-Personal
+WiFi_Cipher,CCMP
+WiFi_Connection mode,Profile
+WiFi_Receive rate (Mbps),144.4
+WiFi_Transmit rate (Mbps),144.4
+WiFi_Signal,100%
+WiFi_Rssi,-25
+WiFi_Profile,WAVE
+WiFi_QoS MSCS Configured,0
+WiFi_QoS Map Configured,0
+WiFi_QoS Map Allowed by Policy,0
+OVERALL_Link_Quality_Score,95
+META_Timestamp,1763899588.0429707
 META_Target_IP,192.168.0.3
 META_Interface,wlan0

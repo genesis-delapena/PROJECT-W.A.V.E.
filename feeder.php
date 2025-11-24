@@ -692,31 +692,45 @@ session_start();
   // Generic helper to send arbitrary PC->RPi commands using proxy then fallback
   async function sendPCCommand(cmd) {
     try {
+      console.log('[FEEDER] sendPCCommand called with:', cmd);
       const payload = JSON.stringify({ message: cmd });
+      console.log('[FEEDER] Payload:', payload);
+      
       // try proxy first
       const proxyUrl = 'ad_dashboard.php?api=send_flow';
       try {
+        console.log('[FEEDER] Trying proxy:', proxyUrl);
         const pr = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+        console.log('[FEEDER] Proxy response status:', pr.status);
         if (pr.ok) {
-          console.log('[FEEDER] sendPCCommand via proxy:', cmd);
+          const respText = await pr.text();
+          console.log('[FEEDER] Proxy response body:', respText);
+          console.log('[FEEDER] ✓ sendPCCommand SUCCESS via proxy:', cmd);
           return true;
         } else {
-          console.warn('sendPCCommand proxy non-ok', pr.status);
+          const errText = await pr.text();
+          console.warn('[FEEDER] sendPCCommand proxy non-ok', pr.status, errText);
         }
       } catch (e) {
-        console.warn('sendPCCommand proxy failed', e);
+        console.warn('[FEEDER] sendPCCommand proxy failed', e);
       }
+      
       // fallback direct
+      console.log('[FEEDER] Attempting direct Flask connection...');
       const FLASK_SEND = 'http://192.168.0.2:5000/send_from_pc';
       const res = await fetch(FLASK_SEND, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+      console.log('[FEEDER] Direct response status:', res.status);
       if (!res.ok) {
-        console.warn('sendPCCommand direct non-ok', res.status);
+        const errText = await res.text();
+        console.warn('[FEEDER] sendPCCommand direct non-ok', res.status, errText);
         return false;
       }
-      console.log('[FEEDER] sendPCCommand direct:', cmd);
+      const respText = await res.text();
+      console.log('[FEEDER] Direct response body:', respText);
+      console.log('[FEEDER] ✓ sendPCCommand SUCCESS direct:', cmd);
       return true;
     } catch (e) {
-      console.warn('sendPCCommand error', e);
+      console.error('[FEEDER] sendPCCommand FAILED - error:', e);
       return false;
     }
   }
@@ -1096,32 +1110,75 @@ let logCounter = 0;
   if (dispenseBtn) { dispenseBtn.disabled = true; dispenseBtn.style.opacity = 0.6; dispenseBtn.style.pointerEvents = 'none'; dispenseBtn.setAttribute('aria-disabled','true'); }
   if (amountInput) amountInput.disabled = true;
 
-  // Start impeller first (spin-up), then open valve — required by hardware sequence
-  const started = await sendPCCommand('14:IMPELLER:ON');
+  // STEP 1: Start impeller first and wait for it to spin up
+  console.log('[DISPENSE] STEP 1: Sending IMPELLER ON command...');
+  console.log('[DISPENSE] Command string: "14:IMPELLER:ON"');
+  
+  // Show alert that impeller command is being sent
+  Swal.fire({ toast: true, position: 'top-end', timer: 2000, showConfirmButton: false, icon: 'info', title: 'Starting Impeller...' });
+  
+  // Send IMPELLER:ON multiple times with longer delays to ensure RPI receives it
+  let started = false;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    console.log(`[DISPENSE] Sending IMPELLER:ON command (attempt ${attempt}/5)...`);
+    const result = await sendPCCommand('14:IMPELLER:ON');
+    console.log(`[DISPENSE] Attempt ${attempt} result:`, result);
+    if (result) started = true;
+    // Longer delay between attempts (500ms) to give RPI time to poll and process
+    if (attempt < 5) await new Promise(r => setTimeout(r, 500));
+  }
+  
   if (!started) {
+    console.error('[DISPENSE] Failed to start impeller - aborting');
     if (dispenseBtn) { dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled'); }
     if (amountInput) amountInput.disabled = false;
     Swal.fire('Error', 'Failed to start impeller. Dispense aborted.', 'error');
     return;
   }
-  // brief spin-up time for impeller
-  await new Promise(r => setTimeout(r, 300));
-  // Now command the valve to the selected flow-rate
+  console.log('[DISPENSE] IMPELLER ON commands sent successfully');
+  Swal.fire({ toast: true, position: 'top-end', timer: 1500, showConfirmButton: false, icon: 'success', title: 'Impeller Started!' });
+  
+  // Allow extra time for impeller to receive command and spin up (2 seconds)
+  console.log('[DISPENSE] Waiting 2s for RPI to process and impeller to spin up...');
+  await new Promise(r => setTimeout(r, 2000));
+  console.log('[DISPENSE] Spin-up complete');
+  
+  // STEP 2: Now open the valve to the selected flow-rate
+  console.log('[DISPENSE] STEP 2: Opening valve to', flowSel);
   try {
-    const valveSent = await sendFlowCommand(flowSel);
+    // Send valve command multiple times with delays
+    let valveSent = false;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      console.log(`[DISPENSE] Sending VALVE command (attempt ${attempt}/5)...`);
+      const result = await sendFlowCommand(flowSel);
+      console.log(`[DISPENSE] STEP 2 attempt ${attempt} result:`, result);
+      if (result) valveSent = true;
+      // Longer delay between valve command attempts (500ms)
+      if (attempt < 5) await new Promise(r => setTimeout(r, 500));
+    }
+    
     if (!valveSent) {
+      console.error('[DISPENSE] Failed to open valve - stopping impeller and aborting');
       // stop impeller and revert UI
-      await sendPCCommand('14:IMPELLER:OFF').catch(()=>{});
+      for (let i = 0; i < 3; i++) {
+        await sendPCCommand('14:IMPELLER:OFF');
+        await new Promise(r => setTimeout(r, 500));
+      }
       if (dispenseBtn) { dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled'); }
       if (amountInput) amountInput.disabled = false;
       Swal.fire('Error', 'Failed to open valve. Dispense aborted.', 'error');
       return;
     }
-    // small delay to allow valve to actuate
-    await new Promise(r => setTimeout(r, 150));
+    console.log('[DISPENSE] Valve commands sent, waiting 1s for RPI to process and valve to actuate...');
+    // Allow extra time for RPI to receive and valve to fully actuate
+    await new Promise(r => setTimeout(r, 1000));
+    console.log('[DISPENSE] Valve actuation complete, starting dispense timer');
   } catch (e) {
-    console.warn('Valve command failed after impeller ON', e);
-    await sendPCCommand('14:IMPELLER:OFF').catch(()=>{});
+    console.error('[DISPENSE] Valve command failed after impeller ON', e);
+    for (let i = 0; i < 3; i++) {
+      await sendPCCommand('14:IMPELLER:OFF');
+      await new Promise(r => setTimeout(r, 500));
+    }
     if (dispenseBtn) { dispenseBtn.disabled = false; dispenseBtn.style.opacity = 1; dispenseBtn.style.pointerEvents = 'auto'; dispenseBtn.removeAttribute('aria-disabled'); }
     if (amountInput) amountInput.disabled = false;
     Swal.fire('Error', 'Failed to open valve. Dispense aborted.', 'error');
@@ -1148,6 +1205,8 @@ let logCounter = 0;
     countdownEl.textContent = `Estimated: ${(durationMs/1000).toFixed(1)}s`;
 
     // Wait for duration while optionally updating a small timer
+    console.log('[DISPENSE] Starting countdown timer for', durationMs, 'ms');
+    const timerStartTime = Date.now();
     await new Promise((resolve) => {
       const intId = setInterval(() => {
         elapsed += tickInterval;
@@ -1155,34 +1214,40 @@ let logCounter = 0;
         countdownEl.textContent = `Estimated: ${(remaining/1000).toFixed(1)}s`;
         if (elapsed >= durationMs) {
           clearInterval(intId);
+          const actualElapsed = Date.now() - timerStartTime;
+          console.log('[DISPENSE] Timer completed. Expected:', durationMs, 'ms, Actual:', actualElapsed, 'ms');
           resolve();
         }
       }, tickInterval);
     });
 
-    // perform the local dispense bookkeeping now that time elapsed
-    feedRemaining -= amount;
-    updateContainerStatus();
-    const percent = containerCapacity > 0 ? ((feedRemaining / containerCapacity) * 100).toFixed(1) : 0;
-    let status = 'success';
-    if (percent < 20) status = 'warning';
-    logDispense(amount, percent, status);
-    document.getElementById('manualAmount').value = '';
-
-    // stop impeller after estimated dispense
-    const stopped = await sendPCCommand('14:IMPELLER:OFF');
-    if (!stopped) {
-      Swal.fire('Warning', 'Dispensed but failed to stop impeller. Please check device.', 'warning');
-    }
-
-    // After dispensing, automatically close the valve and update UI/state
+    // STEP 3: Close valve first, then stop impeller
+    console.log('[DISPENSE] ========================================');
+    console.log('[DISPENSE] STEP 3: CLOSING VALVE THEN STOPPING IMPELLER');
+    console.log('[DISPENSE] ========================================');
+    console.log('[DISPENSE] Timestamp:', new Date().toISOString());
+    
+    // STEP 3A: Close the valve first
+    console.log('[DISPENSE] STEP 3A: Closing valve...');
     let autoClosed = false;
     try {
-      const closeSent = await sendFlowCommand('closed');
+      // Send valve close command multiple times with delays
+      let closeSent = false;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        console.log(`[DISPENSE] Sending VALVE CLOSE command (attempt ${attempt}/5)...`);
+        const result = await sendFlowCommand('closed');
+        console.log(`[DISPENSE] Valve close attempt ${attempt} result:`, result);
+        if (result) closeSent = true;
+        // Delay between attempts (500ms)
+        if (attempt < 5) await new Promise(r => setTimeout(r, 500));
+      }
+      
       if (!closeSent) {
+        console.warn('[DISPENSE] Failed to close valve');
         Swal.fire('Warning', 'Dispensed but failed to close valve. Please check device.', 'warning');
       } else {
         autoClosed = true;
+        console.log('[DISPENSE] ✓ Valve close commands sent successfully');
         // reflect closed state in UI/storage
         try {
           const sel = document.getElementById('flowRateSelect');
@@ -1195,8 +1260,50 @@ let logCounter = 0;
         updateDispenseButtonState('closed');
       }
     } catch (e) {
-      console.warn('Failed to auto-close valve after dispense', e);
+      console.warn('[DISPENSE] Failed to auto-close valve after dispense', e);
     }
+    
+    // Longer delay after valve closes to ensure RPI processes it (1 second)
+    console.log('[DISPENSE] Waiting 1s for RPI to process valve close...');
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // STEP 3B: Now stop the impeller
+    console.log('[DISPENSE] STEP 3B: Stopping impeller...');
+    console.log('[DISPENSE] Command string: "14:IMPELLER:OFF"');
+    
+    Swal.fire({ toast: true, position: 'top-end', timer: 2000, showConfirmButton: false, icon: 'info', title: 'Stopping Impeller...' });
+    
+    // Send IMPELLER:OFF command multiple times with longer delays to ensure it's received
+    let stopped = false;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      console.log(`[DISPENSE] Sending IMPELLER:OFF command (attempt ${attempt}/5)...`);
+      const result = await sendPCCommand('14:IMPELLER:OFF');
+      console.log(`[DISPENSE] Attempt ${attempt} result:`, result);
+      if (result) stopped = true;
+      // Longer delay between attempts (500ms) to give RPI time to poll
+      if (attempt < 5) await new Promise(r => setTimeout(r, 500));
+    }
+    
+    if (!stopped) {
+      console.error('[DISPENSE] ✗ All attempts to send IMPELLER OFF command failed');
+      Swal.fire('Warning', 'Dispensed but failed to stop impeller. Please check device.', 'warning');
+    } else {
+      console.log('[DISPENSE] ✓ IMPELLER OFF commands sent successfully');
+      Swal.fire({ toast: true, position: 'top-end', timer: 1500, showConfirmButton: false, icon: 'success', title: 'Impeller Stopped!' });
+    }
+    
+    // Final delay to ensure RPI processes impeller stop (1 second)
+    console.log('[DISPENSE] Waiting 1s for RPI to process impeller stop...');
+    await new Promise(r => setTimeout(r, 1000));
+
+    // STEP 5: Perform local dispense bookkeeping after hardware is stopped
+    feedRemaining -= amount;
+    updateContainerStatus();
+    const percent = containerCapacity > 0 ? ((feedRemaining / containerCapacity) * 100).toFixed(1) : 0;
+    let status = 'success';
+    if (percent < 20) status = 'warning';
+    logDispense(amount, percent, status);
+    document.getElementById('manualAmount').value = '';
 
     // cleanup UI - if we auto-closed, leave controls disabled for closed state
     if (dispenseBtn) {

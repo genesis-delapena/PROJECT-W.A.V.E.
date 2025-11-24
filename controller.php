@@ -822,6 +822,27 @@ if (ticksG && labelsG && headingReadout && boat) {
     } catch (e) { /* non-fatal */ }
   }
 
+        // Helper: log watchdog trigger event to notification system
+        function logWatchdogTrigger() {
+          try {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "ad_dashboard.php", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            const payload = [
+              'log_to_event_log=1',
+              'user=SYSTEM',
+              'role=CONTROLLER',
+              'ts=' + encodeURIComponent(Date.now()),
+              'desc=' + encodeURIComponent('Watchdog Triggered'),
+              'status=ALARM'
+            ];
+            xhr.send(payload.join('&'));
+            console.log('[Controller] Logged watchdog triggered to notification system');
+          } catch(e) {
+            console.error('[Controller] Failed to log watchdog triggered:', e);
+          }
+        }
+
         // Helper: send a PC-originated message to Flask server (/send_from_pc)
         const FLASK_CANDIDATES = [
           'http://192.168.0.2:5000',
@@ -937,6 +958,7 @@ if (ticksG && labelsG && headingReadout && boat) {
                 const res = await fetch('fetch_sensors.php', { cache: 'no-store' });
                 if (!res.ok) throw new Error('fetch failed ' + res.status);
                 const data = await res.json();
+                
                 // Accept multiple shapes: { from, message }, or { rpi: {...} }, or raw dict
                 let msg = null;
                 if (!data) msg = null;
@@ -951,7 +973,9 @@ if (ticksG && labelsG && headingReadout && boat) {
                     if (typeof o[n] !== 'undefined') return o[n];
                     const up = n.toUpperCase();
                     for (const k of Object.keys(o)) {
-                      if (k.toUpperCase() === up) return o[k];
+                      if (k.toUpperCase() === up) {
+                        return o[k];
+                      }
                     }
                   }
                   return undefined;
@@ -1238,6 +1262,18 @@ if (ticksG && labelsG && headingReadout && boat) {
                     // Detect ALERT conditions in current message or lastKnown using tolerant lookup
                     const alertVal = (typeof getField === 'function') ? getField(msg, ['ALERT','alert']) : (msg && (msg.ALERT || msg.alert));
                     const unitVal = (typeof getField === 'function') ? getField(msg, ['UNIT_ID','unit_id','UNITID']) : (msg && (msg.UNIT_ID || msg.unit_id || msg.UNITID));
+                    
+                    // Store ALERT and UNIT_ID immediately when they arrive in the message
+                    if (typeof alertVal !== 'undefined' && alertVal !== null) {
+                      console.log('[Watchdog] ⚠️ ALERT received:', alertVal);
+                      lastKnown.alert = alertVal;
+                      saveLastKnownToStorage();
+                    }
+                    if (typeof unitVal !== 'undefined' && unitVal !== null) {
+                      lastKnown.unit_id = unitVal;
+                      saveLastKnownToStorage();
+                    }
+                    
                     const lastAlert = lastKnown.alert;
                     const lastUnit = lastKnown.unit_id || lastKnown.UNIT_ID;
                     let effectiveAlert = (typeof alertVal !== 'undefined') ? alertVal : lastAlert;
@@ -1245,12 +1281,19 @@ if (ticksG && labelsG && headingReadout && boat) {
 
                     const wdVal = (typeof watchdog !== 'undefined' && watchdog !== null && watchdog !== '') ? watchdog : lastKnown.watchdog;
 
-                    // First check for explicit reset/clear messages (e.g. "Tamper Reset") which should clear ALERT state
+                    // First check for explicit reset/clear messages (e.g. "Tamper Reset") or explicit WATCHDOG: "OK"
                     const infoVal = (typeof getField === 'function') ? getField(msg, ['INFO','info','MESSAGE','message']) : (msg && (msg.INFO || msg.info || msg.MESSAGE || msg.message));
+                    const statusVal = (typeof getField === 'function') ? getField(msg, ['STATUS','status']) : (msg && (msg.STATUS || msg.status));
                     const infoUpper = (typeof infoVal !== 'undefined' && infoVal !== null) ? String(infoVal).toUpperCase() : '';
+                    const statusUpper = (typeof statusVal !== 'undefined' && statusVal !== null) ? String(statusVal).toUpperCase() : '';
+                    const wdUpper = (typeof wdVal !== 'undefined' && wdVal !== null) ? String(wdVal).toUpperCase() : '';
 
-                    if (infoUpper.match(/RESET|CLEAR|RESTORE/)) {
-                      try { delete lastKnown.alert; delete lastKnown.unit_id; saveLastKnownToStorage(); } catch(e){}
+                    // Check if this message explicitly indicates OK status or reset
+                    const isResetOrOK = infoUpper.match(/RESET|CLEAR|RESTORE/) || wdUpper === 'OK' || statusUpper.match(/SECURE|OK/);
+
+                    if (isResetOrOK) {
+                      console.log('[Watchdog] ✓ RESET detected - Clearing alert');
+                      try { delete lastKnown.alert; delete lastKnown.unit_id; delete lastKnown.watchdog_alert_logged; saveLastKnownToStorage(); } catch(e){}
                       try { effectiveAlert = undefined; effectiveUnit = undefined; } catch (e) {}
                       wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
                       wdEl.style.background = '';
@@ -1259,6 +1302,7 @@ if (ticksG && labelsG && headingReadout && boat) {
                       // Determine if this is an ALERT case
                       let isAlert = false;
                       let alertReason = '';
+                      
                       try {
                         if (typeof effectiveAlert !== 'undefined' && effectiveAlert !== null && String(effectiveAlert).toUpperCase().match(/WAVE|TAMPER/)) {
                           isAlert = true; alertReason = String(effectiveAlert);
@@ -1266,13 +1310,25 @@ if (ticksG && labelsG && headingReadout && boat) {
                         if (!isAlert && typeof effectiveUnit !== 'undefined' && String(effectiveUnit).toUpperCase().match(/WATCHDOG|TAMPER/)) {
                           isAlert = true; alertReason = String(effectiveUnit);
                         }
-                      } catch (e) { /* ignore */ }
+                      } catch (e) { 
+                        console.error('[Watchdog] Error:', e);
+                      }
 
                       if (isAlert) {
-                        lastKnown.alert = effectiveAlert; lastKnown.unit_id = effectiveUnit; saveLastKnownToStorage();
+                        console.log('[Watchdog] ⚠️ ALERT ACTIVE:', alertReason);
                         const reason = alertReason ? ` ${alertReason}` : '';
                         wdEl.innerHTML = `<div>WATCHDOG</div><strong style="color:#fff">ALERT</strong>${reason}`;
                         wdEl.style.background = '#7f1d1d'; wdEl.style.color = '#fff7f7';
+                        
+                        // Log the watchdog trigger event to the notification log (only once per alert)
+                        try {
+                          if (!lastKnown.watchdog_alert_logged) {
+                            console.log('[Watchdog] Logging to notification system');
+                            logWatchdogTrigger();
+                            lastKnown.watchdog_alert_logged = true;
+                            saveLastKnownToStorage();
+                          }
+                        } catch(e) { console.error('[Watchdog] Failed to log:', e); }
                       } else {
                         wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
                         wdEl.style.background = '';
@@ -1295,9 +1351,9 @@ if (ticksG && labelsG && headingReadout && boat) {
               renderFromLastKnown();
             } catch (e) { /* ignore */ }
 
-            // start polling every 2s, resiliently (so earlier JS errors don't prevent poller start)
+            // start polling every 0.5s for faster watchdog alert detection, resiliently (so earlier JS errors don't prevent poller start)
             try {
-              setInterval(pollCaTemp, 2000);
+              setInterval(pollCaTemp, 500);
               // run once immediately
               pollCaTemp().catch(()=>{});
             } catch (e) {

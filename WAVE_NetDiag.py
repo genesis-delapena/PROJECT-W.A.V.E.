@@ -470,7 +470,7 @@ if __name__ == "__main__":
     if _HAS_TK:
         try:
             root = tk.Tk()
-            root.title('WAVE NetDiag — Diagnostic Report')
+            root.title('W.A.V.E. Network Diagnostic Report')
             # Prevent accidental programmatic destruction: only WM_DELETE_WINDOW will exit.
             def on_close():
                 try:

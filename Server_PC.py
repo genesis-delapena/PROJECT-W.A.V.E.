@@ -1,4 +1,5 @@
 import threading
+import requests
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
@@ -17,9 +18,13 @@ NODE_PUSH_ENDPOINT = os.environ.get('NODE_PUSH_ENDPOINT', 'http://192.168.0.2:30
 Store two slots separately:
  - last_message['rpi']  : the latest sensor dict posted by the RPi
  - last_message['pc']   : the last PC-originated string message (controls)
+ - command_queue        : queue of commands to be sent to RPI (prevents command loss)
+ - persistent_alert     : stores ALERT/WATCHDOG state that persists across sensor updates
 This prevents control strings from overwriting the sensor dict.
 """
 last_message = {"rpi": {"WQI": 0, "PH": 0, "TURB": 0, "TEMP": 0, "AMMO": 0, "DO": 0}, "pc": ""}
+command_queue = []  # Queue to store multiple commands for RPI to process
+persistent_alert = {}  # Stores ALERT, UNIT_ID, WATCHDOG status that persists until cleared
 
 @app.route("/")
 def index():
@@ -29,18 +34,23 @@ def index():
 # PC-originated message (optional utility endpoint)
 @app.route("/send_from_pc", methods=["POST"])
 def send_from_pc():
-    global last_message
+    global last_message, command_queue
     data = request.get_json(force=True) or {}
     msg = data.get("message", "")
-    # store PC-originated string separately so it doesn't clobber sensor dict
-    last_message['pc'] = msg
-    print(f"[PC → RPi] {msg}")
-    return jsonify({"status": "ok"})
+    
+    if msg:
+        # Store in both places: last_message['pc'] for backward compatibility and queue for reliability
+        last_message['pc'] = msg
+        command_queue.append(msg)
+        print(f"[PC → RPi] ✓ Command queued: '{msg}' (Queue size: {len(command_queue)})")
+        print(f"[PC → RPi] Current queue: {command_queue}")
+    
+    return jsonify({"status": "ok", "command": msg, "queue_size": len(command_queue)})
 
 # RPi posts the latest sensor readings here
 @app.route("/send", methods=["POST"])
 def receive_message():
-    global last_message
+    global last_message, persistent_alert
     # Accept JSON payloads or plain text payloads from RPi terminals
     import json
     msg = {}
@@ -83,6 +93,52 @@ def receive_message():
                 except Exception:
                     msg = {"raw": raw}
 
+    # Handle persistent alert fields (ALERT, WATCHDOG, INFO)
+    if isinstance(msg, dict):
+        # Check for ALERT message - store persistently
+        if 'ALERT' in msg or 'alert' in msg:
+            alert_val = msg.get('ALERT') or msg.get('alert')
+            persistent_alert['ALERT'] = alert_val
+            if 'UNIT_ID' in msg:
+                persistent_alert['UNIT_ID'] = msg.get('UNIT_ID')
+            print(f"[WATCHDOG] ⚠️ ALERT STORED: {alert_val}")
+            
+            # Log to notification system in admin dashboard
+            try:
+                log_data = {
+                    'log_to_event_log': '1',
+                    'user': 'SYSTEM',
+                    'desc': 'Watchdog Triggered',
+                    'status': 'ALARM'
+                }
+                response = requests.post('http://localhost/wave_project/ad_dashboard.php', data=log_data, timeout=5)
+                print(f"[WATCHDOG] ✓ Notification POST response: {response.status_code}")
+                if response.status_code == 200:
+                    print(f"[WATCHDOG] ✓✓ Successfully logged to notification system")
+                    print(f"[WATCHDOG] Response: {response.text[:200]}")
+                else:
+                    print(f"[WATCHDOG] ⚠️ Unexpected status code: {response.status_code}")
+            except Exception as e:
+                print(f"[WATCHDOG] ⚠️ Failed to log notification: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Check for WATCHDOG: OK or INFO: Reset - clear persistent alert
+        watchdog_val = msg.get('WATCHDOG') or msg.get('watchdog')
+        info_val = msg.get('INFO') or msg.get('info')
+        status_val = msg.get('STATUS') or msg.get('status')
+        
+        if watchdog_val and str(watchdog_val).upper() == 'OK':
+            print(f"[WATCHDOG] ✓ RESET DETECTED - Clearing persistent alert")
+            persistent_alert.clear()
+        elif info_val and any(word in str(info_val).upper() for word in ['RESET', 'CLEAR', 'RESTORE']):
+            print(f"[WATCHDOG] ✓ RESET DETECTED - Clearing persistent alert")
+            persistent_alert.clear()
+        elif status_val and any(word in str(status_val).upper() for word in ['SECURE', 'OK']):
+            if msg.get('UNIT_ID') and 'WATCHDOG' in str(msg.get('UNIT_ID')).upper():
+                print(f"[WATCHDOG] ✓ RESET DETECTED - Clearing persistent alert")
+                persistent_alert.clear()
+
     # update only the rpi slot with the latest sensor dict
     if isinstance(msg, dict):
         # attach a UTC timestamp for frontend watchdog/last-updated display
@@ -99,12 +155,14 @@ def receive_message():
         except Exception:
             last_message['rpi'] = {"message": msg}
 
-    print("[RPi → PC] Received sensor payload:")
+    # Only print sensor payload if it contains important fields (not just heading updates)
     if isinstance(last_message['rpi'], dict):
-        for k, v in last_message['rpi'].items():
-            print(f"  - {k}: {v}")
-    else:
-        print(f"  - message: {last_message['rpi']}")
+        important_keys = ['ALERT', 'alert', 'WATCHDOG', 'watchdog', 'WQI', 'PH', 'DO', 'TURB', 'NH3_PPM']
+        has_important = any(k in last_message['rpi'] for k in important_keys)
+        if has_important:
+            print("[RPi → PC] Received sensor payload:")
+            for k, v in last_message['rpi'].items():
+                print(f"  - {k}: {v}")
 
     # Best-effort: forward this payload to a Node realtime HTTP endpoint so the Node server can immediately
     # emit to connected socket.io clients without waiting for a poll. Fail silently on errors.
@@ -126,19 +184,33 @@ def receive_message():
 # PHP dashboard fetches here
 @app.route("/get", methods=["GET"])
 def get_message():
+    global command_queue, persistent_alert
     # Returns both rpi sensors and pc last message
     # Return the normalized shape expected by controller.php and fetch_sensors.php
-    # { "from": "rpi", "message": {...sensor dict...}, "pc": "..." }
+    # { "from": "rpi", "message": {...sensor dict...}, "pc": "...", "commands": [...] }
+    
+    # Pop the oldest command from queue if available (FIFO)
+    next_command = ""
+    if command_queue:
+        next_command = command_queue.pop(0)
+        print(f"[PC → RPi] ✓ Command retrieved: '{next_command}' (Remaining: {len(command_queue)})")
+    
+    # Merge persistent alert data with current sensor data
+    merged_message = last_message.get('rpi', {}).copy()
+    if persistent_alert:
+        merged_message.update(persistent_alert)
+    
     response = {
         "from": "rpi",
-        "message": last_message.get('rpi', {}),
-        "pc": last_message.get('pc', "")
+        "message": merged_message,
+        "pc": next_command if next_command else last_message.get('pc', ""),
+        "commands": command_queue.copy()  # Include remaining queue for debugging
     }
     return jsonify(response)
 
 def console_sender():
     """Optional console thread to send manual messages from PC."""
-    global last_message
+    global last_message, command_queue
     try:
         while True:
             msg = input("PC> ").strip()
@@ -146,9 +218,10 @@ def console_sender():
                 print("Shutting down console sender...")
                 break
             if msg:
-                # keep pc slot separate and avoid clobbering rpi dict
+                # Add to queue just like web commands
                 last_message['pc'] = msg
-                print(f"[PC → RPi] {msg}")
+                command_queue.append(msg)
+                print(f"[PC → RPi] ✓ Command queued: '{msg}' (Queue size: {len(command_queue)})")
     except Exception:
         pass
 

@@ -163,6 +163,15 @@ class FACodeGUI:
             messagebox.showerror("Error", "Master passphrase cannot be empty.")
             return
 
+        # SECURITY CHECK: Verify USB drive is present BEFORE generating any code
+        usb = find_usb_drive(USB_LABEL)
+        if not usb:
+            self.log("ERROR: USB drive 'UFA_CODE' not detected. Code generation aborted.")
+            messagebox.showerror("USB Required", 
+                f"USB drive labeled '{USB_LABEL}' must be inserted before generating a code.\n\n"
+                "Please insert the authorized USB drive and try again.")
+            return
+
         PASSWORD_BYTES = passwd.encode()
 
         # 1. Generate code
@@ -194,13 +203,7 @@ class FACodeGUI:
         encrypted = aes_encrypt(json.dumps(code_data).encode(), key, iv)
         file_data = salt + iv + encrypted
 
-        # Write encrypted file directly to USB only (do NOT save locally)
-        usb = find_usb_drive(USB_LABEL)
-        if not usb:
-            self.log("No USB detected. Authentication file was NOT saved.")
-            messagebox.showerror("USB Missing", "No USB drive detected. Please insert the USB drive and try again.")
-            return
-
+        # Write encrypted file directly to USB (USB already verified at start of generate())
         dest = os.path.join(usb, ENCRYPTED_FILENAME)
         try:
             # write directly to the USB destination

@@ -1,31 +1,54 @@
 {
-  "timestamp": 1763860795.1508994,
+  "timestamp": 1763899588.0429707,
   "target": "192.168.0.3",
   "interface": "wlan0",
   "icmp_test": {
     "sent": 5,
-    "received": 0,
-    "loss_percent": 100.0,
-    "avg_rtt_ms": null,
-    "individual_rtt_ms": []
+    "received": 5,
+    "loss_percent": 0.0,
+    "avg_rtt_ms": 12.623167037963867,
+    "individual_rtt_ms": [
+      20.56884765625,
+      8.106231689453125,
+      15.853404998779297,
+      9.970903396606445,
+      8.616447448730469
+    ]
   },
   "arp_reachability": {
     "reachable": false,
     "mac": null
   },
   "wifi_metrics": {
-    "signal_dbm": null,
-    "link_quality": null,
-    "link_quality_max": null,
-    "raw": "There is 1 interface on the system: \n\n    Name                   : Wi-Fi\n    Description            : Intel(R) Dual Band Wireless-AC 8265\n    GUID                   : a1de2991-7be4-449d-bfd4-1a44223ca227\n    Physical address       : 98:3b:8f:1b:a0:6c\n    State                  : disconnected\n    Radio status           : Hardware On\n                             Software Off\n\n    Hosted network status  : Not available",
+    "signal_dbm": -50,
+    "link_quality": 70,
+    "link_quality_max": 70,
+    "raw": "There is 1 interface on the system: \n\n    Name                   : Wi-Fi\n    Description            : Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC\n    GUID                   : cd1ea539-43cf-495b-86cc-405ec293634c\n    Physical address       : a8:e2:91:93:fe:ae\n    Interface type         : Primary\n    State                  : connected\n    SSID                   : WAVE\n    AP BSSID               : b8:3a:08:84:99:98\n    Band                   : 2.4 GHz\n    Channel                : 6\n    Connected Akm-cipher   : [ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ]\n    Network type           : Infrastructure\n    Radio type             : 802.11n\n    Authentication         : WPA2-Personal\n    Cipher                 : CCMP\n    Connection mode        : Profile\n    Receive rate (Mbps)    : 144.4\n    Transmit rate (Mbps)   : 144.4\n    Signal                 : 100% \n    Rssi                   : -25\n    Profile                : WAVE \n    QoS MSCS Configured         : 0\n    QoS Map Configured          : 0\n    QoS Map Allowed by Policy   : 0",
     "There is 1 interface on the system": "",
     "Name": "Wi-Fi",
-    "Description": "Intel(R) Dual Band Wireless-AC 8265",
-    "GUID": "a1de2991-7be4-449d-bfd4-1a44223ca227",
-    "Physical address": "98:3b:8f:1b:a0:6c",
-    "State": "disconnected",
-    "Radio status": "Hardware On",
-    "Hosted network status": "Not available"
+    "Description": "Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC",
+    "GUID": "cd1ea539-43cf-495b-86cc-405ec293634c",
+    "Physical address": "a8:e2:91:93:fe:ae",
+    "Interface type": "Primary",
+    "State": "connected",
+    "SSID": "WAVE",
+    "AP BSSID": "b8:3a:08:84:99:98",
+    "Band": "2.4 GHz",
+    "Channel": "6",
+    "Connected Akm-cipher": "[ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ]",
+    "Network type": "Infrastructure",
+    "Radio type": "802.11n",
+    "Authentication": "WPA2-Personal",
+    "Cipher": "CCMP",
+    "Connection mode": "Profile",
+    "Receive rate (Mbps)": "144.4",
+    "Transmit rate (Mbps)": "144.4",
+    "Signal": "100%",
+    "Rssi": "-25",
+    "Profile": "WAVE",
+    "QoS MSCS Configured": "0",
+    "QoS Map Configured": "0",
+    "QoS Map Allowed by Policy": "0"
   },
-  "link_quality_score": 30
+  "link_quality_score": 95
 }
