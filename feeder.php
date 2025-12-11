@@ -568,49 +568,6 @@ session_start();
             <input type="number" id="manualAmount" placeholder="Amount" min="1" max="5000" step="1" style="padding:8px 12px;border-radius:8px;border:1.5px solid #b3b3b3;font-size:1em;">
             <button class="mode-btn" id="dispenseBtn" style="padding:8px 20px;" onclick="manualDispense()">DISPENSE</button>
   <script>
-  // --- VESSEL STATUS LOGIC ---
-  function setFeederEnabled(enabled) {
-    document.getElementById('manualAmount').disabled = !enabled;
-    document.getElementById('dispenseBtn').disabled = !enabled;
-    // Update the new progress-style status bar
-    const fill = document.getElementById('feederStatusFill');
-    const label = document.getElementById('feederStatusPercent');
-    const icon = document.getElementById('feederStatusIcon');
-    if (enabled) {
-      // restore based on current remaining feed
-      updateContainerStatus();
-    } else {
-      // show current percentage but desaturate the fill to indicate inactive state
-      updateContainerStatus();
-      if (fill) {
-        // keep width as percentage but make it gray
-        fill.style.background = 'linear-gradient(90deg,#e0e0e0 0%,#bdbdbd 100%)';
-      }
-      if (label) {
-        // keep percentage text visible and black
-        label.style.color = '#000';
-        label.style.fontWeight = '800';
-      }
-    }
-  }
-
-  function fetchVesselStatus() {
-    fetch('fetch_sensors.php')
-      .then(res => res.json())
-      .then(data => {
-        // Assume data.vessel_status is 'on' or 'off'. Adjust as needed for your backend.
-        if (data.vessel_status && data.vessel_status.toLowerCase() === 'off') {
-          setFeederEnabled(false);
-        } else {
-          setFeederEnabled(true);
-        }
-      })
-      .catch(() => setFeederEnabled(false));
-  }
-  // Check vessel status every 5 seconds
-  setInterval(fetchVesselStatus, 5000);
-  fetchVesselStatus();
-  
   // --- FLOW RATE MODE (Closed / Half / Full Open) - make select the single visual control ---
   function updateFlowRateAppearance() {
     try {
@@ -1069,20 +1026,20 @@ function setMode(mode) {
 
 // --- FEED CONTAINER LOGIC ---
 const MAX_HISTORY_ROWS = Infinity;
-const MAX_AMOUNT = 5000;
-let feedRemaining = 2000;
+const MAX_AMOUNT = 250; // Updated maximum allowed amount to 250g
+let feedRemaining = 250; // Updated initial feed remaining to 250g
 localStorage.setItem('feedRemaining', feedRemaining);
-// On load, set to 2000g always
-feedRemaining = 2000;
+// On load, set to 250g always
+feedRemaining = 250;
 localStorage.setItem('feedRemaining', feedRemaining);
-let containerCapacity = 2000;
+let containerCapacity = 250; // Updated container capacity to 250g
 let logCounter = 0;
 
 // Dispenser
   async function manualDispense() {
   const amount = parseInt(document.getElementById('manualAmount').value);
   if (!amount || amount <= 0) { alert('Enter a valid amount!'); return; }
-  if (amount > MAX_AMOUNT) { alert('Maximum allowed is 5000g!'); return; }
+  if (amount > MAX_AMOUNT) { alert('Maximum allowed is 250g!'); return; }
   if (feedRemaining - amount < 0) {
     logDispense(amount, feedRemaining, 'failed');
     Swal.fire('Error!', 'The amount exceeds available feed.', 'error');
@@ -1580,5 +1537,33 @@ function nextLogsPage() { let logs = getSafeArray('dispenseLogs'); if ((logsPage
   // On load, render schedule and logs
   renderDispenseLogs();
     </script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const feedRemainingEl = document.getElementById('feedRemaining');
+    const flowRateSelect = document.getElementById('flowRateSelect');
+
+    // Function to update remaining feed
+    function updateFeedRemaining(amount) {
+      let currentFeed = parseInt(feedRemainingEl.textContent, 10) || 0;
+      const newFeed = currentFeed + amount;
+
+      if (newFeed > 250) {
+        alert('Feed limit exceeded! Maximum remaining feed is 250g.');
+        return;
+      }
+
+      feedRemainingEl.textContent = newFeed;
+    }
+
+    // Example: Hook to flow rate change (adjust logic as needed)
+    flowRateSelect.addEventListener('change', (event) => {
+      if (event.target.value === 'full') {
+        updateFeedRemaining(50); // Example increment
+      } else if (event.target.value === 'half') {
+        updateFeedRemaining(25); // Example increment;
+      }
+    });
+  });
+</script>
 </body>
 </html>

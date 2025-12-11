@@ -815,9 +815,12 @@ if (ticksG && labelsG && headingReadout && boat) {
         else if (typeof lastKnown.speed_kn !== 'undefined') speedEl.innerHTML = `<div>SPEED</div>${(parseFloat(lastKnown.speed_kn) * 1.852).toFixed(2)} km/h`;
       }
       const wdEl = document.getElementById('watchdogStatus');
+      console.log('[DEBUG] Updating WATCHDOG status:', lastKnown);
       if (wdEl && typeof lastKnown.watchdog !== 'undefined') {
-        // Show a simple OK state only (no relative "time ago" and no color change threshold)
+        console.log('[DEBUG] Updating WATCHDOG status to OK in UI');
         wdEl.innerHTML = `<div>WATCHDOG</div>OK`;
+      } else {
+        console.error('[DEBUG] WATCHDOG status not found in server response');
       }
     } catch (e) { /* non-fatal */ }
   }
@@ -833,13 +836,13 @@ if (ticksG && labelsG && headingReadout && boat) {
               'user=SYSTEM',
               'role=CONTROLLER',
               'ts=' + encodeURIComponent(Date.now()),
-              'desc=' + encodeURIComponent('Watchdog Triggered'),
+              'desc=' + encodeURIComponent('Watchdog trigger'),
               'status=ALARM'
             ];
             xhr.send(payload.join('&'));
-            console.log('[Controller] Logged watchdog triggered to notification system');
+            console.log('[Controller] Logged watchdog trigger to notification system');
           } catch(e) {
-            console.error('[Controller] Failed to log watchdog triggered:', e);
+            console.error('[Controller] Failed to log watchdog trigger:', e);
           }
         }
 
@@ -1360,6 +1363,6 @@ if (ticksG && labelsG && headingReadout && boat) {
               console.error('Failed to start sensor poller', e);
             }
           });
-      </script>
+           </script>
 </body>
 </html>

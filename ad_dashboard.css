@@ -1,11 +1,9 @@
-/* Make W.A.V.E. DASHBOARD text black */
 .system-title {
   color: #111 !important;
   -webkit-text-fill-color: #111 !important;
   background: none !important;
 }
 
-/* Ocean-inspired glowing highlight for active tab (whole tab) */
 .nav-item.active {
   color: #111 !important;
   background: linear-gradient(90deg, #a7ffeb 0%, #40c4ff 60%, #00bcd4 100%) !important;
@@ -20,7 +18,6 @@
   text-shadow: 0 0 6px #b2fefa, 0 0 2px #fff;
   background: none !important;
 }
-/* Black font for tab header and tab name text only */
 .tab-label {
   color: #111 !important;
   -webkit-text-fill-color: #111 !important;
@@ -40,13 +37,10 @@ body {
   background: #e0f7fa;
   color: #333;
   line-height: 1.6;
-  padding-top: 90px;            /* space for fixed header */
+  padding-top: 90px;        
   overflow-x: hidden;
 }
 
-/* ===============================
-   HEADER
-================================= */
 .header {
   background: linear-gradient(135deg, #1e4e78, #2e75ac, #3aa3d1);
   padding: 20px 25px;
@@ -132,9 +126,6 @@ body {
 }
 .dropdown-content a button:hover { background: #e6f0f7; }
 
-/* ===============================
-   LEFT NAVIGATION
-================================= */
 .main-navigation {
   background: linear-gradient(180deg, #1e4e78, #2e75ac, #3aa3d1);
   width: 240px;
@@ -167,7 +158,7 @@ body {
   background: transparent;
   border: none;
   text-align: left;
-  text-decoration: none; /* for <a> nav item */
+  text-decoration: none; 
 }
 .nav-item:hover {
   color: #fff;
@@ -181,10 +172,10 @@ body {
   background: rgba(255,255,255,0.25);
 }
 
-/* ✅ Sidebar nav icons */
+/* Sidebar nav icons */
 .nav-icon {
   margin-right: 14px;
-  font-size: 22px;   /* match sensor size */
+  font-size: 22px;  
   width: 46px;
   height: 46px;
   display: flex;
@@ -214,7 +205,7 @@ body {
   flex-direction: column;
   gap: 25px;
   padding: 25px 32px 25px 32px;
-  margin-left: 240px;                        /* space for left nav */
+  margin-left: 240px;                   
   margin-top: 90px;
   width: calc(100vw - 240px);
   min-height: calc(100vh - 90px);

@@ -201,8 +201,8 @@ HEADING_FORCED_SEND_INTERVAL = 10.0 # Seconds: Force send periodically
 
 # --- SENSOR FUSION CONFIG (NEW) ---
 FUSION_RATE_HZ = 20.0
-FUSION_SEND_THRESHOLD = 5.0 # Degrees: Send if fused heading changes by this amount (increased from 0.5)
-FUSION_FORCED_SEND_INTERVAL = 30.0 # Seconds: Force send periodically (increased from 5.0)
+FUSION_SEND_THRESHOLD = 0.5 # Degrees: Send if fused heading changes by this amount
+FUSION_FORCED_SEND_INTERVAL = 5.0 # Seconds: Force send periodically
 # Kalman Filter Tuning Parameters
 KF_Q_PROCESS_NOISE = 0.001  # Low for smooth, slow-drift Gyro
 KF_R_MEAS_NOISE = 0.1       # Higher for noisy Mag/Accel

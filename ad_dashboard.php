@@ -501,10 +501,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .st-btn { font-size:15px; padding:10px 18px; border:none; border-radius:10px; cursor:pointer; font-weight:700; color:#fff; margin:8px 8px 0 0; box-shadow:0 4px 12px rgba(0,0,0,.3); }
 .st-diag    { background: linear-gradient(135deg, #00b4d8, #0096c7); }
 .st-diag:hover { background: linear-gradient(135deg, #0096c7, #0077b6); }
-.st-powerOn { background: linear-gradient(135deg, #20e6b1, #06d6a0); color: #fff; border-radius: 9999px; padding:10px 18px; box-shadow: 0 8px 28px rgba(6,214,160,0.18), 0 0 24px rgba(6,214,160,0.12); border: 1px solid rgba(255,255,255,0.12); }
-.st-powerOn:hover { background: linear-gradient(135deg, #04ad84, #15807c); }
-.st-powerOff{ background: linear-gradient(135deg, #ff6b6b, #e63946); color: #fff; border-radius: 9999px; padding:10px 18px; box-shadow: 0 8px 28px rgba(230,57,70,0.14), 0 0 18px rgba(230,57,70,0.10); border: 1px solid rgba(255,255,255,0.12); }
-.st-powerOff:hover { background: linear-gradient(135deg, #d00000, #9d0208); }
+/* Power button styles removed */
 .st-clear   { background: linear-gradient(135deg, #ffb703, #fb8500); }
 .st-clear:hover { background: linear-gradient(135deg, #fb8500, #d97706); }
 .st-export  { background: linear-gradient(135deg, #06d6a0, #1b9aaa); }
@@ -526,20 +523,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
 .delete-btn { background: linear-gradient(135deg,#00b4ff,#0177d2); color:#fff; border:none; box-shadow:0 4px 10px rgba(0,0,0,0.12); }
 .action-btn:active { transform: translateY(1px); }
 
-/* Vessel status pill (enhanced glowing pill to match new UI) */
-#st-vesselStatus { font-weight: 700; margin-top: 10px; padding: 10px 18px; border-radius: 9999px; display: inline-block; font-size: 0.98rem; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
-.st-vessel-on  {
-  background: linear-gradient(135deg,#20e6b1,#06d6a0) !important;
-  color:#ffffff !important;
-  box-shadow: 0 8px 28px rgba(6,214,160,0.25), 0 0 28px rgba(6,214,160,0.18) !important;
-  border: 1px solid rgba(255,255,255,0.15) !important;
-}
-.st-vessel-off {
-  background: linear-gradient(135deg,#ff6b6b,#e63946) !important;
-  color:#ffffff !important;
-  box-shadow: 0 8px 28px rgba(230,57,70,0.18), 0 0 18px rgba(230,57,70,0.14) !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-}
+/* Vessel pill styles removed */
 
 /* Logs UI (Notifications tab – full-width, no dropdown) */
 .notifications-wrap { background:#fff; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.08); padding:16px; }
@@ -569,22 +553,9 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
     border-radius: 20px !important;
     box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px rgba(0,0,0,.06) !important;
   }
-  /* Vessel pill: smaller radius and matching padding */
-  #st-vesselStatus {
-    margin: 0 !important;
-    padding: 8px 12px !important;
-    border-radius: 20px !important;
-    font-weight: 700 !important;
-    font-size: 0.95rem !important;
-  }
+  /* Vessel pill styles removed */
   /* Power button variants: keep gradients but tighten shadow and padding */
-  .st-powerOn, .st-powerOff {
-    padding: 8px 14px !important;
-    border-radius: 20px !important;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.12) !important;
-  }
-  .st-powerOn { box-shadow: 0 6px 18px rgba(6,214,160,0.12) !important; }
-  .st-powerOff{ box-shadow: 0 6px 18px rgba(230,57,70,0.12) !important; }
+  /* Power button variants removed */
 </style>
 
 <!-- Quick overrides: hide sensor status dots and remove red glow behind power/vessel controls -->
@@ -592,13 +563,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button { display: none !im
   /* Show the small status dot on sensor cards (on/off visual indicator) */
   .st-dot { display: inline-block !important; position: absolute; width:12px; height:12px; border-radius:50%; right:12px; top:12px; }
 
-  /* Remove the red glow/box-shadow behind the Shutdown/Power button and vessel status pill */
-  .st-powerOff, .st-vessel-off, #st-powerBtn.st-powerOff, #st-vesselStatus.st-vessel-off {
-    box-shadow: none !important;
-  }
-
-  /* Optional: make the power-off button less visually aggressive while keeping its color */
-  #st-powerBtn.st-powerOff { border: 1px solid rgba(0,0,0,0.06) !important; }
+  /* Power button visual overrides removed */
 </style>
 </head>
 <body>
@@ -815,7 +780,7 @@ body {
     <button class="<?php echo ($current_tab === 'water') ? 'nav-item active' : 'nav-item'; ?>" data-tab="water"><span class="nav-icon"><i class="fas fa-water"></i></span> <span class="tab-label"><b>MONITORING</b></span> </button>
     <button class="<?php echo ($current_tab === 'notifications') ? 'nav-item active' : 'nav-item'; ?>" data-tab="notifications"><span class="nav-icon"><i class="fas fa-bell"></i></span> <span class="tab-label"><b>NOTIFICATION</b></span> </button>
     <button class="<?php echo ($current_tab === 'feedlogs') ? 'nav-item active' : 'nav-item'; ?>" data-tab="feedlogs"><span class="nav-icon"><i class="fas fa-fish"></i></span> <span class="tab-label"><b>FEEDER</b></span> </button>
-  <a href="#" class="nav-item" id="controllerLink"><span class="nav-icon"><i class="fas fa-ship"></i></span> <span class="tab-label"><b>CONTROLLER</b></span> </a>
+  <a href="controller.php?from=admin" class="nav-item" id="controllerLink"><span class="nav-icon"><i class="fas fa-ship"></i></span> <span class="tab-label"><b>CONTROLLER</b></span> </a>
     <button class="<?php echo ($current_tab === 'users') ? 'nav-item active' : 'nav-item'; ?>" data-tab="users"><span class="nav-icon"><i class="fas fa-users"></i></span> <span class="tab-label"><b>USERS</b></span> </button>
     <button class="<?php echo ($current_tab === 'tools') ? 'nav-item active' : 'nav-item'; ?>" data-tab="tools"><span class="nav-icon"><i class="fas fa-anchor"></i></span> <span class="tab-label"><b>SYSTEM TOOLS</b></span> </button>
   </div>
@@ -1229,114 +1194,16 @@ function filterNotificationLogs() {
 </div>
 
 <!-- ──────────────────────────
-     TOOLS  (SENSORS & SYSTEM ACTIONS AS COMBO BOX)
+     TOOLS  (Simplified: keep NetDiag + 2FA only)
      ────────────────────────── -->
-<div id="toolsSection" class="section" style="<?php echo ($current_tab === 'tools') ? 'position:relative;' : 'display:none; position:relative;'; ?>">
-  <h2></h2>
-
-  <!-- Top-left Combo Box -->
-  <div class="tools-toolbar">
-    <!-- Dropdown removed - sensors and actions are unified into a single view -->
+<div id="toolsSection" class="section" style="<?php echo ($current_tab === 'tools') ? '' : 'display:none;'; ?>">
+  <div class="tools-stage" style="padding:16px; display:flex; align-items:flex-start; justify-content:flex-start; gap:10px; flex-wrap:wrap;">
+    <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
+    <button id="runNetBtn" class="st-btn st-export st-pill" title="Run NetDiag as Administrator" onclick="runNetDiag()">Run Diagnostics</button>
   </div>
-
-  <!-- Full-width stage: one view at a time -->
-  <div id="toolsStageSensors" class="tools-stage" style="display:block;">
-    <!-- Header row for actions (keeps buttons separate and avoids overlap) -->
-    <div class="tools-header" style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px;">
-      <div class="tools-header-left">
-        <!-- left area: reserved for future controls/filters -->
-      </div>
-      <div class="tools-header-right" style="display:flex; gap:10px; align-items:center;">
-  <p id="st-vesselStatus" class="st-vessel-on" style="margin:0; padding:8px 12px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.08);">Vessel Status: ON</p>
-  <button id="runFaBtn" class="st-btn st-export st-pill" title="Run FA Code Generator" onclick="runFA()">Generate 2FA Code</button>
-  <button id="runNetBtn" class="st-btn st-export st-pill" title="Run NetDiag as Administrator" onclick="runNetDiag()">Run Diagnostics</button>
-  <button id="st-powerBtn" class="st-btn st-powerOff st-pill" onclick="ST_togglePower()">Shutdown Vessel</button>
-      </div>
-    </div>
-
-    <style>
-      /* Tools header: keep actions in-flow to avoid overlapping sensor grid. */
-      #toolsSection .tools-header { width:100%; box-sizing:border-box; }
-      @media (max-width: 900px) {
-        #toolsSection .tools-header { flex-direction:column; align-items:stretch; gap:8px; }
-        #toolsSection .tools-header-right { justify-content:flex-end; }
-        #toolsStageSensors { padding-top: 6px; }
-      }
-      @media (min-width: 901px) {
-        #toolsSection .tools-header { flex-direction:row; }
-        #toolsStageSensors { padding-top: 6px; }
-      }
-    </style>
-    <div class="st-grid">
-      <!-- Sensor cards: PH, Turbidity, Temperature, Dissolved Oxygen, Loadcells, Ultrasonic -->
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-vial"></i></div>
-        <h4>PH LEVEL</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-ph" onchange="ST_toggleSensor(this,'ph')">
-          <label for="st-sw-ph" class="st-slider"></label>
-        </div>
-      </div>
-
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-tint"></i></div>
-        <h4>TURBIDITY</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-turb" onchange="ST_toggleSensor(this,'turb')">
-          <label for="st-sw-turb" class="st-slider"></label>
-        </div>
-      </div>
-
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-thermometer-half"></i></div>
-        <h4>TEMPERATURE</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-temp" onchange="ST_toggleSensor(this,'temp')">
-          <label for="st-sw-temp" class="st-slider"></label>
-        </div>
-      </div>
-
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-wind"></i></div>
-        <h4>DISSOLVED OXYGEN</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-do" onchange="ST_toggleSensor(this,'do')">
-          <label for="st-sw-do" class="st-slider"></span></label>
-        </div>
-      </div>
-
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-balance-scale"></i></div>
-        <h4>LOADCELL 1</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-load1" onchange="ST_toggleSensor(this,'load1')">
-          <label for="st-sw-load1" class="st-slider"></label>
-        </div>
-      </div>
-
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-balance-scale"></i></div>
-        <h4>LOADCELL 2</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-load2" onchange="ST_toggleSensor(this,'load2')">
-          <label for="st-sw-load2" class="st-slider"></label>
-        </div>
-      </div>
-
-      <div class="st-card">
-        <div class="st-icon"><i class="fas fa-broadcast-tower"></i></div>
-        <h4>FEED LEVEL (ULTRASONIC)</h4>
-        <div class="st-switch">
-          <input type="checkbox" id="st-sw-ultra" onchange="ST_toggleSensor(this,'ultra')">
-          <label for="st-sw-ultra" class="st-slider"></label>
-        </div>
-      </div>
-    </div>
-  </div>
-    <hr style="margin:20px 0; border:1px solid #e5e7eb;">
-  </div>
+</div>
 </div> <!-- /main-content -->
-<!-- ───────────────────────────────
+<!--<!-- ───────────────────────────────
      SCRIPTS
      ─────────────────────────────── -->
      <script>
@@ -2283,80 +2150,7 @@ function ST_loadSensorStates() {
     if (dot) dot.className = "st-dot " + (v ? "st-on" : "st-off");
   });
 }
-/* Vessel state */
-function ST_setVesselState(state, emit=true) {
-  const statusEl = document.getElementById("st-vesselStatus");
-  const powerBtn = document.getElementById("st-powerBtn");
-  const sensorSwitches = document.querySelectorAll(".st-switch input[type='checkbox']");
-
-  const toggleAllBtn = document.getElementById('toggleAllBtn');
-  if (state === "ON") {
-  if (statusEl){ statusEl.textContent = "Vessel Status: ON"; statusEl.className = "st-vessel-on"; }
-  if (powerBtn){ powerBtn.textContent = "Shutdown Vessel"; powerBtn.className = "st-btn st-powerOff st-pill"; }
-    sensorSwitches.forEach(sw => { sw.disabled = false; sw.parentElement.style.opacity = "1"; });
-    if (toggleAllBtn) { toggleAllBtn.disabled = false; toggleAllBtn.style.opacity = "1"; toggleAllBtn.style.cursor = "pointer"; }
-  } else {
-  if (statusEl){ statusEl.textContent = "Vessel Status: OFF"; statusEl.className = "st-vessel-off"; }
-  if (powerBtn){ powerBtn.textContent = "Power On Vessel"; powerBtn.className = "st-btn st-powerOn st-pill"; }
-    sensorSwitches.forEach(sw => { sw.disabled = true; sw.parentElement.style.opacity = ".6"; });
-    if (toggleAllBtn) { toggleAllBtn.disabled = true; toggleAllBtn.style.opacity = ".6"; toggleAllBtn.style.cursor = "not-allowed"; }
-  }
-  localStorage.setItem("vesselState", state);
-  try {
-    // Only emit when this was initiated locally; if socket missing, create a local log
-    const username = '<?php echo addslashes($_SESSION['username']); ?>';
-    if (emit && window.socket && window.socket.connected) {
-      window.socket.emit('vessel.change', { state: state, user: username, role: 'ADMIN', ts: Date.now(), origin: 'local' });
-    } else if (emit) {
-      const action = (state === 'ON') ? 'powered ON the vessel' : 'shut down the vessel';
-      ST_addLog('alert', `[ADMIN] ${username} ${action}`);
-    }
-  } catch(e) {}
-}
-
-/* Unified Power Button */
-function ST_togglePower() {
-  const state = localStorage.getItem("vesselState") || "ON";
-  if (state === "ON") {
-    Swal.fire({
-      title: 'Shutdown Vessel?',
-      text: "This will power off the system.",
-      icon:'error', showCancelButton:true,
-      confirmButtonColor:'#9d0208', cancelButtonColor:'#aaa',
-      confirmButtonText:'Yes, shutdown'
-    }).then((res)=>{
-      if (res.isConfirmed) {
-  ST_setVesselState("OFF");
-  // Server will emit authoritative log.event for the shutdown action
-        const rs = document.getElementById("st-rebootStatus");
-        if (rs) rs.textContent = "Shutting down vessel...";
-          setTimeout(()=>{
-            const rs2 = document.getElementById("st-rebootStatus");
-            if (rs2) rs2.textContent = "Vessel is now powered off.";
-          },3000);
-      }
-    });
-  } else {
-    Swal.fire({
-      title:'Power On Vessel?',
-      text:'This will start the system.',
-      icon:'success', showCancelButton:true,
-      confirmButtonColor:'#06d6a0', cancelButtonColor:'#aaa',
-      confirmButtonText:'Yes, power on'
-    }).then((res)=>{
-      if (res.isConfirmed) {
-  ST_setVesselState("ON");
-  // Server will emit authoritative log.event for the power-on action
-        const rs = document.getElementById("st-rebootStatus");
-        if (rs) rs.textContent = "Vessel powering on...";
-          setTimeout(()=>{
-            const rs2 = document.getElementById("st-rebootStatus");
-            if (rs2) rs2.textContent = "Vessel is now running.";
-          },3000);
-      }
-    });
-  }
-}
+/* Vessel power UI removed */
 
 
 /* Logs + persistence + PDF export (displayed in Notifications tab) */
@@ -2641,8 +2435,6 @@ function performLogout(){
     stopMonitoring();
     // bulk OFF sensors
     ST_toggleAllSensors(false);
-    // vessel off
-    ST_setVesselState("OFF");
     ST_addLog("alert","System shutdown initiated by Admin");
     try {
       if (window.socket && window.socket.connected) {
@@ -2655,10 +2447,10 @@ function performLogout(){
         ST_addLog("info","<?php echo addslashes($_SESSION['username']); ?> logged out");
         setTimeout(()=>{ window.location.href='waveout.php'; }, 200);
       }
-    } catch(e) {
+    } catch (e) {
       setTimeout(()=>{ window.location.href='waveout.php'; }, 200);
     }
-  } catch(e) {
+  } catch (e) {
     // fail-safe redirect
     window.location.href='waveout.php';
   }
@@ -2728,34 +2520,7 @@ window.addEventListener('load', ()=>{
   const toggleBtn = document.getElementById('toggleAllBtn');
   if (toggleBtn) toggleBtn.textContent = ST_allSensorsCurrentlyOn() ? "ALL OFF" : "ALL ON";
 
-  const state = localStorage.getItem("vesselState") || "ON";
-  // Restore UI state without emitting/logging on page load
-  ST_setVesselState(state, false);
-
-  // Controller tab click handler
-  const controllerLink = document.getElementById('controllerLink');
-  if (controllerLink) {
-    controllerLink.addEventListener('click', function(e) {
-      const vesselState = localStorage.getItem('vesselState') || 'ON';
-      if (vesselState === 'OFF') {
-        e.preventDefault();
-        Swal.fire('Vessel is OFF', 'Please turn ON the vessel to access the Controller.', 'warning');
-      } else {
-        window.location.href = 'controller.php?from=admin';
-      }
-    });
-  }
-
-  // Sensor toggles click handler
-  document.querySelectorAll('.st-switch input[type="checkbox"]').forEach(sw => {
-    sw.addEventListener('click', function(e) {
-      const vesselState = localStorage.getItem('vesselState') || 'ON';
-      if (vesselState === 'OFF') {
-        e.preventDefault();
-        Swal.fire('Vessel is OFF', 'Please turn ON the vessel to use sensors.', 'warning');
-      }
-    });
-  });
+  // Remove vessel power gating: controller and sensors are always accessible
 
   // Start monitoring only if current tab is Monitoring
   const active = document.querySelector(".nav-item.active")?.dataset.tab;
@@ -2856,12 +2621,7 @@ window.addEventListener('load', ()=>{
         if (dot) dot.className = 'st-dot ' + (val ? 'st-on' : 'st-off');
       }
 
-      // Vessel state sync
-      if (e.key === 'vesselState') {
-        const state = e.newValue || 'OFF';
-        // Apply remote change but avoid creating a local log (server will emit canonical log)
-        ST_setVesselState(state, false);
-      }
+      // Vessel state sync removed
     } catch (err) { /* ignore */ }
   });
 
@@ -2894,12 +2654,12 @@ window.addEventListener('load', ()=>{
     } catch(e) {}
   });
 
-  // Announce current local state (sensors + vessel) on connect so other clients
+  // Announce current local state (sensors only) on connect so other clients
   // can immediately sync their UI without requiring a manual refresh.
   window.socket.on('connect', () => {
     try {
       const me = '<?php echo addslashes($_SESSION['username']); ?>';
-      const statePayload = { user: me, ts: Date.now(), origin: 'admin', vesselState: localStorage.getItem('vesselState') || 'OFF', sensors: {} };
+      const statePayload = { user: me, ts: Date.now(), origin: 'admin', sensors: {} };
       (ST_SENSOR_KEYS || []).forEach(k => { try { statePayload.sensors[k] = (localStorage.getItem('st-sensor-' + k) === '1'); } catch(e) { statePayload.sensors[k] = false; } });
       window.socket.emit('announce.state', statePayload);
     } catch(e) {}
@@ -2915,7 +2675,7 @@ window.addEventListener('load', ()=>{
     } catch(e) {}
   });
 
-        // Apply state announces from other clients: update switches and vessel state
+        // Apply state announces from other clients: update switches
         window.socket.on('state.announce', payload => {
           try {
             const me = '<?php echo addslashes($_SESSION['username']); ?>';
@@ -2932,10 +2692,6 @@ window.addEventListener('load', ()=>{
                   try { localStorage.setItem('st-sensor-' + k, isOn ? '1' : '0'); } catch(e) {}
                 } catch(e) {}
               });
-            }
-            // Apply vessel state but avoid emitting loops
-            if (payload.vesselState) {
-              try { ST_setVesselState(String(payload.vesselState || 'OFF'), false); localStorage.setItem('vesselState', String(payload.vesselState || 'OFF')); } catch(e) {}
             }
             // Update sync UI to indicate who triggered the state
             try { updateSyncStatus('active', payload.user + ' @ ' + new Date(payload.ts || Date.now()).toLocaleTimeString()); } catch(e) {}
@@ -2957,14 +2713,7 @@ window.addEventListener('load', ()=>{
           } catch(e){}
         });
 
-        window.socket.on('vessel.change', payload => {
-          try {
-            // Apply remote change but do not re-emit to avoid loops
-            ST_setVesselState(payload.state, false);
-            try { localStorage.setItem('vesselState', payload.state); } catch(e){}
-            // Do not create a separate log here; server will emit a single `log.event` with the cleaned message
-          } catch(e){}
-        });
+        // Vessel change events are ignored; power UI removed
 
         window.socket.on('log.event', payload => {
           try {
@@ -3004,11 +2753,6 @@ window.addEventListener('load', ()=>{
     } catch(e){}
   };
 
-  const origAdmin_ST_togglePower = window.ST_togglePower;
-  window.ST_togglePower = function() {
-    origAdmin_ST_togglePower();
-    // Do NOT emit here — ST_setVesselState handles emission after user confirms via SweetAlert.
-  };
 
   // Poll server for new event_log rows (only when Notifications tab is active)
   let lastLogId = 0;
@@ -3159,5 +2903,3 @@ async function runNetDiag(){
   }
 }
 </script>
-</body>
-</html>

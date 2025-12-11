@@ -1,5 +1,4 @@
 import threading
-import requests
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
@@ -102,32 +101,15 @@ def receive_message():
             if 'UNIT_ID' in msg:
                 persistent_alert['UNIT_ID'] = msg.get('UNIT_ID')
             print(f"[WATCHDOG] ⚠️ ALERT STORED: {alert_val}")
-            
-            # Log to notification system in admin dashboard
-            try:
-                log_data = {
-                    'log_to_event_log': '1',
-                    'user': 'SYSTEM',
-                    'desc': 'Watchdog Triggered',
-                    'status': 'ALARM'
-                }
-                response = requests.post('http://localhost/wave_project/ad_dashboard.php', data=log_data, timeout=5)
-                print(f"[WATCHDOG] ✓ Notification POST response: {response.status_code}")
-                if response.status_code == 200:
-                    print(f"[WATCHDOG] ✓✓ Successfully logged to notification system")
-                    print(f"[WATCHDOG] Response: {response.text[:200]}")
-                else:
-                    print(f"[WATCHDOG] ⚠️ Unexpected status code: {response.status_code}")
-            except Exception as e:
-                print(f"[WATCHDOG] ⚠️ Failed to log notification: {e}")
-                import traceback
-                traceback.print_exc()
         
         # Check for WATCHDOG: OK or INFO: Reset - clear persistent alert
         watchdog_val = msg.get('WATCHDOG') or msg.get('watchdog')
         info_val = msg.get('INFO') or msg.get('info')
         status_val = msg.get('STATUS') or msg.get('status')
         
+        print(f"[DEBUG] WATCHDOG value: {watchdog_val}, INFO value: {info_val}, STATUS value: {status_val}")
+        print(f"[DEBUG] Message received: {msg}")
+        print(f"[DEBUG] Persistent alert before processing: {persistent_alert}")
         if watchdog_val and str(watchdog_val).upper() == 'OK':
             print(f"[WATCHDOG] ✓ RESET DETECTED - Clearing persistent alert")
             persistent_alert.clear()
@@ -138,6 +120,7 @@ def receive_message():
             if msg.get('UNIT_ID') and 'WATCHDOG' in str(msg.get('UNIT_ID')).upper():
                 print(f"[WATCHDOG] ✓ RESET DETECTED - Clearing persistent alert")
                 persistent_alert.clear()
+        print(f"[DEBUG] Persistent alert after processing: {persistent_alert}")
 
     # update only the rpi slot with the latest sensor dict
     if isinstance(msg, dict):
@@ -155,14 +138,12 @@ def receive_message():
         except Exception:
             last_message['rpi'] = {"message": msg}
 
-    # Only print sensor payload if it contains important fields (not just heading updates)
+    print("[RPi → PC] Received sensor payload:")
     if isinstance(last_message['rpi'], dict):
-        important_keys = ['ALERT', 'alert', 'WATCHDOG', 'watchdog', 'WQI', 'PH', 'DO', 'TURB', 'NH3_PPM']
-        has_important = any(k in last_message['rpi'] for k in important_keys)
-        if has_important:
-            print("[RPi → PC] Received sensor payload:")
-            for k, v in last_message['rpi'].items():
-                print(f"  - {k}: {v}")
+        for k, v in last_message['rpi'].items():
+            print(f"  - {k}: {v}")
+    else:
+        print(f"  - message: {last_message['rpi']}")
 
     # Best-effort: forward this payload to a Node realtime HTTP endpoint so the Node server can immediately
     # emit to connected socket.io clients without waiting for a poll. Fail silently on errors.

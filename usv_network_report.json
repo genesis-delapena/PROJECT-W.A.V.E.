@@ -1,19 +1,13 @@
 {
-  "timestamp": 1763899588.0429707,
+  "timestamp": 1764684369.5519755,
   "target": "192.168.0.3",
   "interface": "wlan0",
   "icmp_test": {
     "sent": 5,
-    "received": 5,
-    "loss_percent": 0.0,
-    "avg_rtt_ms": 12.623167037963867,
-    "individual_rtt_ms": [
-      20.56884765625,
-      8.106231689453125,
-      15.853404998779297,
-      9.970903396606445,
-      8.616447448730469
-    ]
+    "received": 0,
+    "loss_percent": 100.0,
+    "avg_rtt_ms": null,
+    "individual_rtt_ms": []
   },
   "arp_reachability": {
     "reachable": false,
@@ -23,7 +17,7 @@
     "signal_dbm": -50,
     "link_quality": 70,
     "link_quality_max": 70,
-    "raw": "There is 1 interface on the system: \n\n    Name                   : Wi-Fi\n    Description            : Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC\n    GUID                   : cd1ea539-43cf-495b-86cc-405ec293634c\n    Physical address       : a8:e2:91:93:fe:ae\n    Interface type         : Primary\n    State                  : connected\n    SSID                   : WAVE\n    AP BSSID               : b8:3a:08:84:99:98\n    Band                   : 2.4 GHz\n    Channel                : 6\n    Connected Akm-cipher   : [ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ]\n    Network type           : Infrastructure\n    Radio type             : 802.11n\n    Authentication         : WPA2-Personal\n    Cipher                 : CCMP\n    Connection mode        : Profile\n    Receive rate (Mbps)    : 144.4\n    Transmit rate (Mbps)   : 144.4\n    Signal                 : 100% \n    Rssi                   : -25\n    Profile                : WAVE \n    QoS MSCS Configured         : 0\n    QoS Map Configured          : 0\n    QoS Map Allowed by Policy   : 0",
+    "raw": "There is 1 interface on the system: \n\n    Name                   : Wi-Fi\n    Description            : Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC\n    GUID                   : cd1ea539-43cf-495b-86cc-405ec293634c\n    Physical address       : a8:e2:91:93:fe:ae\n    Interface type         : Primary\n    State                  : connected\n    SSID                   : WAVE\n    AP BSSID               : b8:3a:08:84:99:98\n    Band                   : 2.4 GHz\n    Channel                : 6\n    Connected Akm-cipher   : [ akm = 00-0f-ac:02, cipher =  00-0f-ac:04 ]\n    Network type           : Infrastructure\n    Radio type             : 802.11n\n    Authentication         : WPA2-Personal\n    Cipher                 : CCMP\n    Connection mode        : Auto Connect\n    Receive rate (Mbps)    : 144.4\n    Transmit rate (Mbps)   : 144.4\n    Signal                 : 100% \n    Rssi                   : -28\n    Profile                : WAVE \n    QoS MSCS Configured         : 0\n    QoS Map Configured          : 0\n    QoS Map Allowed by Policy   : 0",
     "There is 1 interface on the system": "",
     "Name": "Wi-Fi",
     "Description": "Realtek 8852BE-VT Wireless LAN WiFi 6 PCI-E NIC",
@@ -40,15 +34,15 @@
     "Radio type": "802.11n",
     "Authentication": "WPA2-Personal",
     "Cipher": "CCMP",
-    "Connection mode": "Profile",
+    "Connection mode": "Auto Connect",
     "Receive rate (Mbps)": "144.4",
     "Transmit rate (Mbps)": "144.4",
     "Signal": "100%",
-    "Rssi": "-25",
+    "Rssi": "-28",
     "Profile": "WAVE",
     "QoS MSCS Configured": "0",
     "QoS Map Configured": "0",
     "QoS Map Allowed by Policy": "0"
   },
-  "link_quality_score": 95
+  "link_quality_score": 25
 }
